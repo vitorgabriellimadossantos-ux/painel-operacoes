@@ -1,0 +1,128 @@
+[
+  {
+    "nome": "AGE FIBRA",
+    "tipo": "Lista Principal",
+    "erp": "ERP Voalle / Elleven / Hubsoft",
+    "chat": "VONIX",
+    "voz": "VONIX / URA"
+  },
+  {
+    "nome": "ALLGE",
+    "tipo": "Lista Principal",
+    "erp": "MK Solutions (MK)",
+    "chat": "MK BOT",
+    "voz": "VONIX"
+  },
+  {
+    "nome": "CELINET",
+    "tipo": "Lista Principal",
+    "erp": "ERP Celinet",
+    "chat": "Chat Celinet (Webchat)",
+    "voz": "VONIX"
+  },
+  {
+    "nome": "DELTA",
+    "tipo": "Lista Principal",
+    "erp": "TomTicket (deltacorporate)",
+    "chat": "TomTicket",
+    "voz": "VONIX"
+  },
+  {
+    "nome": "DIGITAL SAT",
+    "tipo": "Lista Principal",
+    "erp": "MK Solutions (MK)",
+    "chat": "Autoatendimento Web / WhatsApp",
+    "voz": "VONIX"
+  },
+  {
+    "nome": "EGR NET",
+    "tipo": "Lista Principal",
+    "erp": "MK Solutions (MK)",
+    "chat": "Autoatendimento Web / App EGRNET",
+    "voz": "VONIX"
+  },
+  {
+    "nome": "FONETALK",
+    "tipo": "Lista Principal",
+    "erp": "Portal Financeiro Fonetalk",
+    "chat": "Chatbot System AI",
+    "voz": "VONIX"
+  },
+  {
+    "nome": "GTR NET",
+    "tipo": "Lista Principal",
+    "erp": "IXC / Gestão GTR",
+    "chat": "Chatwoot",
+    "voz": "VONIX"
+  },
+  {
+    "nome": "LÍDER",
+    "tipo": "Lista Principal",
+    "erp": "MK Solutions (MK)",
+    "chat": "Autoatendimento Web / WhatsApp",
+    "voz": "VONIX"
+  },
+  {
+    "nome": "LIG TOP",
+    "tipo": "Lista Principal",
+    "erp": "Hubsoft",
+    "chat": "Chatwoot / GoHighLevel",
+    "voz": "VONIX"
+  },
+  {
+    "nome": "NAVEX",
+    "tipo": "Lista Principal",
+    "erp": "Sistema ISP Navex",
+    "chat": "Webchat Navex",
+    "voz": "VONIX"
+  },
+  {
+    "nome": "NETFREE",
+    "tipo": "Lista Principal",
+    "erp": "Hubsoft (Linkis, Fibraxx, JL)",
+    "chat": "VONIX",
+    "voz": "VONIX"
+  },
+  {
+    "nome": "NEW FIBER",
+    "tipo": "Lista Principal",
+    "erp": "MK Solutions (MK) / Hubsoft",
+    "chat": "MKBOT / ChatMix",
+    "voz": "VONIX"
+  },
+  {
+    "nome": "NEX TELECOM",
+    "tipo": "Lista Principal",
+    "erp": "Hubsoft",
+    "chat": "Fluctus Chat",
+    "voz": "VONIX"
+  },
+  {
+    "nome": "R2 TELECOM",
+    "tipo": "Lista Principal",
+    "erp": "Hubsoft",
+    "chat": "Fluctus Chat",
+    "voz": "VONIX"
+  },
+  {
+    "nome": "SOTHIS",
+    "tipo": "Lista Principal",
+    "erp": "GLPI (Ticket Sothis) / Hubsoft",
+    "chat": "Mundiale (Chatbot)",
+    "voz": "VONIX"
+  },
+  {
+    "nome": "TELECALL",
+    "tipo": "Lista Principal",
+    "erp": "Salesforce (Telexperts)",
+    "chat": "Atende Chat",
+    "voz": "VONIX"
+  },
+  {
+    "nome": "WEB LINK",
+    "tipo": "Lista Principal",
+    "erp": "Hubsoft",
+    "chat": "ChatMix",
+    "voz": "VONIX"
+  }
+]
