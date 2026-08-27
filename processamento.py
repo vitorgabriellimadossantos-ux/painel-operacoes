@@ -90,17 +90,18 @@ def formatar_segundos_para_hora(segundos_totais):
 
 def formatar_segundos_para_hora(segundos_totais):
     """
-    Transforma segundos inteiros de volta para o formato de texto HH:MM:SS.
-    Usado para exibir os dados de forma legível nos Dashboards e PDFs.
+    Transforma segundos inteiros de volta para HH:MM:SS.
     """
-    if pd.isna(totais) or totais < 0:
+
+    if pd.isna(segundos_totais) or segundos_totais < 0:
         return "00:00:00"
-        
-    totais = int(totais)
-    horas = totais // 3600
-    minutos = (totais % 3600) // 60
-    segundos = totais % 60
-    
+
+    segundos_totais = int(segundos_totais)
+
+    horas = segundos_totais // 3600
+    minutos = (segundos_totais % 3600) // 60
+    segundos = segundos_totais % 60
+
     return f"{horas:02d}:{minutos:02d}:{segundos:02d}"
 
 # ==========================================
