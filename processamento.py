@@ -32,7 +32,7 @@ def converter_para_segundos(valor_tempo):
             
     return 0
 
-def formatar_segundos_para_hora(segundos totais):
+def formatar_segundos_para_hora(segundos_totais):
     """
     Transforma segundos inteiros de volta para o formato de texto HH:MM:SS.
     Usado para exibir os dados de forma legível nos Dashboards e PDFs.
