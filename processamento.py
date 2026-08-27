@@ -8,29 +8,85 @@ import re
 
 def converter_para_segundos(valor_tempo):
     """
-    Converte strings de tempo (HH:MM:SS) ou números para segundos inteiros.
-    Isso é essencial para podermos calcular médias (TMA, TME).
+    Converte valores de tempo do Excel/Pandas para segundos.
+    Aceita:
+    - HH:MM:SS
+    - MM:SS
+    - '0 days 00:15:32'
+    - pandas.Timedelta
+    - números
     """
+
     if pd.isna(valor_tempo) or valor_tempo == '':
         return 0
-    
-    # Se já for um número (int ou float), assumimos que já está em segundos
-    if isinstance(valor_tempo, (int, float)):
+
+    # Se for Timedelta do Pandas
+    if isinstance(valor_tempo, pd.Timedelta):
+        return int(valor_tempo.total_seconds())
+
+    # Se for timedelta do Python
+    import datetime
+    if isinstance(valor_tempo, datetime.timedelta):
+        return int(valor_tempo.total_seconds())
+
+    # Se já for número
+    if isinstance(valor_tempo, (int, float, np.integer, np.floating)):
+        if np.isnan(valor_tempo) if isinstance(valor_tempo, float) else False:
+            return 0
         return int(valor_tempo)
-        
+
     valor_tempo = str(valor_tempo).strip()
-    
-    # Tenta extrair o padrão HH:MM:SS
+
+    # Trata formatos como:
+    # '0 days 00:15:32'
+    # '1 days 02:30:00'
+    if 'days' in valor_tempo.lower():
+        try:
+            return int(pd.to_timedelta(valor_tempo).total_seconds())
+        except Exception:
+            pass
+
+    # Trata HH:MM:SS ou MM:SS
     if ':' in valor_tempo:
-        partes = valor_tempo.split(':')
-        if len(partes) == 3: # HH:MM:SS
-            h, m, s = partes
-            return int(h) * 3600 + int(m) * 60 + int(float(s))
-        elif len(partes) == 2: # MM:SS
-            m, s = partes
-            return int(m) * 60 + int(float(s))
-            
+        try:
+            partes = valor_tempo.split(':')
+
+            if len(partes) == 3:
+                h, m, s = partes
+                return (
+                    int(h) * 3600
+                    + int(m) * 60
+                    + int(float(s))
+                )
+
+            elif len(partes) == 2:
+                m, s = partes
+                return (
+                    int(m) * 60
+                    + int(float(s))
+                )
+
+        except (ValueError, TypeError):
+            return 0
+
     return 0
+
+
+def formatar_segundos_para_hora(segundos_totais):
+    """
+    Transforma segundos inteiros de volta para HH:MM:SS.
+    """
+
+    if pd.isna(segundos_totais) or segundos_totais < 0:
+        return "00:00:00"
+
+    segundos_totais = int(segundos_totais)
+
+    horas = segundos_totais // 3600
+    minutos = (segundos_totais % 3600) // 60
+    segundos = segundos_totais % 60
+
+    return f"{horas:02d}:{minutos:02d}:{segundos:02d}"
 
 def formatar_segundos_para_hora(segundos_totais):
     """
