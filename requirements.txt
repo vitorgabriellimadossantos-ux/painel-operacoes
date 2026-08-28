@@ -3,3 +3,5 @@ pandas
 openpyxl
 reportlab
 plotly
+sqlalchemy
+psycopg2-binary
