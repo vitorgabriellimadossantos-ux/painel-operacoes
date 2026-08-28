@@ -45,44 +45,109 @@ def carregar_empresas():
             return []
     return []
 
-def processar_arquivo_upload(uploaded_file, lista_empresas):
-    """Lê o arquivo, identifica se é Voz ou Chat e aplica o processamento correto."""
+def ler_arquivo_upload(uploaded_file):
+    """Lê Excel/CSV e devolve o DataFrame bruto."""
     nome_arquivo = uploaded_file.name
     extensao = nome_arquivo.split('.')[-1].lower()
-    
-    # Lê o arquivo dependendo da extensão
-    try:
-        if extensao == 'csv':
-            df_bruto = pd.read_csv(uploaded_file, sep=None, engine='python')
-        elif extensao in ['xls', 'xlsx']:
-            df_bruto = pd.read_excel(uploaded_file)
-        else:
-            return pd.DataFrame()
-            
-        if df_bruto.empty:
-            return pd.DataFrame()
-            
-        # Identifica a empresa pelo nome do arquivo
-        empresa = proc.identificar_empresa_por_arquivo(nome_arquivo, lista_empresas)
-        
-        # Identificação rudimentar do tipo de canal (Voz x Chat) baseado nas colunas
-        colunas_str = " ".join([str(c).lower() for c in df_bruto.columns])
-        
-        if 'tempo de espera' in colunas_str or 'horário crítico' in colunas_str:
-            # É provavelmente um relatório de Voz (Vonix)
-            return proc.processar_voz_vonix(df_bruto, empresa)
-        else:
-            # É provavelmente um relatório de Chat
-            ferramenta = "Desconhecido"
-            if 'chatwoot' in nome_arquivo.lower(): ferramenta = "Chatwoot"
-            elif 'fluctus' in nome_arquivo.lower(): ferramenta = "Fluctus"
-            elif 'chatmix' in nome_arquivo.lower(): ferramenta = "ChatMix"
-            
-            return proc.processar_chat(df_bruto, empresa, ferramenta)
-            
-    except Exception as e:
-        st.sidebar.error(f"Erro ao processar {nome_arquivo}: {str(e)}")
-        return pd.DataFrame()
+
+    if extensao == 'csv':
+        return pd.read_csv(uploaded_file, sep=None, engine='python')
+    if extensao in ['xls', 'xlsx']:
+        return pd.read_excel(uploaded_file)
+    return pd.DataFrame()
+
+
+def processar_arquivos_upload(arquivos, lista_empresas):
+    """
+    Detecta automaticamente os formatos recebidos.
+    Também relaciona arquivos Volume + Indicadores de uma mesma empresa
+    e separa relatórios agregados de produtividade (ex.: LIG TOP).
+    """
+    brutos = []
+
+    # 1) Lê todos os arquivos primeiro
+    for uploaded_file in arquivos:
+        try:
+            df_bruto = ler_arquivo_upload(uploaded_file)
+            if df_bruto.empty:
+                continue
+
+            nome_arquivo = uploaded_file.name
+            empresa = proc.identificar_empresa_por_arquivo(nome_arquivo, lista_empresas)
+            tipo = proc.detectar_tipo_planilha(df_bruto, nome_arquivo)
+
+            brutos.append({
+                'nome': nome_arquivo,
+                'empresa': empresa,
+                'tipo': tipo,
+                'df': df_bruto
+            })
+        except Exception as e:
+            st.sidebar.error(f"Erro ao ler {uploaded_file.name}: {e}")
+
+    # 2) Indexa os arquivos de indicadores por empresa
+    indicadores_por_empresa = {}
+    for item in brutos:
+        if item['tipo'] == 'chat_indicadores':
+            empresa = item['empresa']
+            if empresa == 'EMPRESA NÃO IDENTIFICADA' and 'EMPRESA' in item['df'].columns:
+                vals = item['df']['EMPRESA'].dropna().astype(str).str.strip()
+                if not vals.empty:
+                    empresa = vals.iloc[0]
+            indicadores_por_empresa[str(empresa).upper()] = item['df']
+
+    dataframes_atendimentos = []
+    dataframes_produtividade = []
+
+    # 3) Processa cada arquivo pelo formato detectado
+    for item in brutos:
+        nome = item['nome']
+        empresa = item['empresa']
+        tipo = item['tipo']
+        df_bruto = item['df']
+
+        try:
+            # Indicadores são auxiliares do Volume; não entram sozinhos no master.
+            if tipo == 'chat_indicadores':
+                continue
+
+            # LIG TOP é relatório agregado por agente, não atendimento individual.
+            if tipo == 'ligtop_agentes':
+                df_prod = proc.processar_ligtop_agentes(
+                    df_bruto,
+                    empresa if empresa != 'EMPRESA NÃO IDENTIFICADA' else 'LIG TOP'
+                )
+                dataframes_produtividade.append(df_prod)
+                continue
+
+            # Para Volume R2/NEX, procura o arquivo de Indicadores correspondente.
+            df_indicadores = None
+            if tipo == 'chat_volume':
+                chave = str(empresa).upper()
+                df_indicadores = indicadores_por_empresa.get(chave)
+
+                # Fallback pelo nome da empresa dentro da planilha de indicadores
+                if df_indicadores is None:
+                    nome_upper = nome.upper()
+                    for chave_ind, df_ind in indicadores_por_empresa.items():
+                        if chave_ind in nome_upper or nome_upper.split(' - ')[0] in chave_ind:
+                            df_indicadores = df_ind
+                            break
+
+            df_processado = proc.processar_dataframe_automatico(
+                df_bruto,
+                nome_arquivo=nome,
+                nome_empresa=None if empresa == 'EMPRESA NÃO IDENTIFICADA' else empresa,
+                df_indicadores=df_indicadores
+            )
+
+            if not df_processado.empty:
+                dataframes_atendimentos.append(df_processado)
+
+        except Exception as e:
+            st.sidebar.error(f"Erro ao processar {nome}: {e}")
+
+    return dataframes_atendimentos, dataframes_produtividade
 
 # ==========================================
 # 2. BARRA LATERAL (SIDEBAR)
@@ -112,18 +177,26 @@ if not arquivos_carregados:
 
 # Se chegou aqui, temos arquivos. Vamos processá-los.
 with st.spinner('Processando e unificando relatórios...'):
-    dataframes = []
-    for arquivo in arquivos_carregados:
-        df_processado = processar_arquivo_upload(arquivo, lista_empresas_json)
-        if not df_processado.empty:
-            dataframes.append(df_processado)
+    dataframes, dataframes_produtividade = processar_arquivos_upload(
+        arquivos_carregados,
+        lista_empresas_json
+    )
 
-if not dataframes:
+if not dataframes and not dataframes_produtividade:
     st.error("Não foi possível extrair dados válidos dos arquivos enviados. Verifique os formatos.")
     st.stop()
 
-# Concatena tudo em um ÚNICO DataFrame Master
-df_master = pd.concat(dataframes, ignore_index=True)
+# Concatena os atendimentos em um ÚNICO DataFrame Master
+if dataframes:
+    df_master = pd.concat(dataframes, ignore_index=True)
+else:
+    df_master = pd.DataFrame(columns=proc.COLUNAS_PADRAO)
+
+# Relatórios agregados de produtividade ficam separados do volume de atendimentos
+if dataframes_produtividade:
+    df_produtividade_extra = pd.concat(dataframes_produtividade, ignore_index=True)
+else:
+    df_produtividade_extra = pd.DataFrame()
 
 # Garante que Data seja formato Datetime para os filtros
 df_master['Data_Parse'] = pd.to_datetime(df_master['Data'], errors='coerce')
@@ -206,7 +279,8 @@ with aba1:
         c3.metric("% Chat", f"{(vol_chat/total)*100:.1f}%", f"{vol_chat} conversas")
         c4.metric("TMA Geral", metricas.get("TMA", "00:00:00"))
         c5.metric("TME Geral", metricas.get("TME", "00:00:00"))
-        c6.metric("SLA Atingido", f"{metricas.get('SLA (%)', 0)}%")
+        sla_valor = metricas.get('SLA (%)')
+        c6.metric("SLA Atingido", f"{sla_valor}%" if sla_valor is not None else "Sem dado")
         
         st.markdown("---")
         
@@ -356,6 +430,32 @@ with aba4:
             st.markdown("**Tabela Completa de Produtividade**")
             st.dataframe(
                 ranking[['Agente', 'Volume', 'TMA', 'Conformidade (%)']],
+                use_container_width=True,
+                height=350
+            )
+
+
+    # Relatórios agregados adicionais (ex.: LIG TOP)
+    if not df_produtividade_extra.empty:
+        st.markdown("---")
+        st.subheader("Produtividade por Plataforma / Relatório Agregado")
+
+        df_prod_view = df_produtividade_extra.copy()
+        if empresas_selecionadas:
+            df_prod_view = df_prod_view[df_prod_view['Empresa'].isin(empresas_selecionadas)]
+
+        if not df_prod_view.empty:
+            df_prod_view['Tempo médio de resolução'] = df_prod_view['Tempo_Resolucao_Seg'].apply(proc.formatar_segundos_para_hora)
+            df_prod_view['Tempo médio de primeira resposta'] = df_prod_view['Primeira_Resposta_Seg'].apply(proc.formatar_segundos_para_hora)
+            df_prod_view['Tempo médio de espera do cliente'] = df_prod_view['Espera_Cliente_Seg'].apply(proc.formatar_segundos_para_hora)
+
+            st.dataframe(
+                df_prod_view[[
+                    'Empresa', 'Agente', 'Conversas_Atribuidas', 'Resolvidos',
+                    'Tempo médio de primeira resposta',
+                    'Tempo médio de resolução',
+                    'Tempo médio de espera do cliente'
+                ]],
                 use_container_width=True,
                 height=350
             )
