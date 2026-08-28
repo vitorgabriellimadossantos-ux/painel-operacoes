@@ -1,10 +1,16 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import json
-import os
-import io
 from datetime import datetime, time
+from sqlalchemy import text as sql_text
+
+# 1. Configurações da Página (Deve ser o primeiro comando Streamlit)
+st.set_page_config(
+    page_title="Painel de Controle Operacional",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
 # Importando os módulos internos criados anteriormente
 # O try/except garante que se os arquivos não estiverem na mesma pasta, o erro será amigável
@@ -15,35 +21,68 @@ except ImportError:
     st.error("⚠️ Módulos internos não encontrados. Certifique-se de que processamento.py e relatorio_pdf.py estão na mesma pasta.")
     st.stop()
 
-# 1. Configurações da Página (Deve ser o primeiro comando Streamlit)
-st.set_page_config(
-    page_title="Painel de Controle Operacional",
-    page_icon="📊",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# ==========================================
+# CONEXÃO COM O BANCO SUPABASE / POSTGRESQL
+# ==========================================
+@st.cache_resource
+def obter_conexao_banco():
+    """Cria a conexão SQL usando os Secrets configurados no Streamlit Cloud."""
+    return st.connection("supabase", type="sql")
 
-# Configuração do caminho do Banco de Dados
-DIR_DATA = "data"
-CAMINHO_JSON = os.path.join(DIR_DATA, "empresas.json")
-CAMINHO_JSON_LEGADO = "empresas.json" # Caso tenha sido criado na raiz nos passos anteriores
 
-# Cria a pasta data se não existir
-if not os.path.exists(DIR_DATA):
-    os.makedirs(DIR_DATA)
-
-@st.cache_data(ttl=60) # Cache para não ler o disco a todo momento
 def carregar_empresas():
-    """Lê o arquivo JSON buscando primeiramente na pasta data/ e depois na raiz."""
-    caminho = CAMINHO_JSON if os.path.exists(CAMINHO_JSON) else CAMINHO_JSON_LEGADO
-    if os.path.exists(caminho):
-        try:
-            with open(caminho, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except Exception as e:
-            st.sidebar.error(f"Erro ao ler banco de empresas: {e}")
-            return []
-    return []
+    """Carrega as empresas ativas diretamente do Supabase."""
+    try:
+        conn = obter_conexao_banco()
+        df_empresas = conn.query(
+            """
+            SELECT id, nome, tipo, sistema_voz, sistema_chat, ativo
+            FROM empresas
+            WHERE ativo IS TRUE
+            ORDER BY nome;
+            """,
+            ttl=0
+        )
+
+        registros = []
+        for _, row in df_empresas.iterrows():
+            registros.append({
+                "id": int(row["id"]),
+                "nome": str(row["nome"]),
+                "tipo": row["tipo"] if pd.notna(row["tipo"]) else "",
+                "erp": "",
+                "voz": row["sistema_voz"] if pd.notna(row["sistema_voz"]) else "",
+                "chat": row["sistema_chat"] if pd.notna(row["sistema_chat"]) else "",
+                "ativo": bool(row["ativo"])
+            })
+        return registros
+
+    except Exception as e:
+        st.sidebar.error(f"Erro ao conectar ao Supabase: {e}")
+        return []
+
+
+def cadastrar_empresa_banco(nome, tipo, sistema_voz="", sistema_chat=""):
+    """Cadastra uma nova empresa diretamente no Supabase."""
+    conn = obter_conexao_banco()
+    with conn.session as session:
+        session.execute(
+            sql_text(
+                """
+                INSERT INTO empresas (nome, tipo, sistema_voz, sistema_chat, ativo)
+                VALUES (:nome, :tipo, :sistema_voz, :sistema_chat, TRUE)
+                ON CONFLICT (nome) DO NOTHING;
+                """
+            ),
+            {
+                "nome": nome.upper().strip(),
+                "tipo": tipo,
+                "sistema_voz": sistema_voz.strip() if sistema_voz else None,
+                "sistema_chat": sistema_chat.strip() if sistema_chat else None,
+            }
+        )
+        session.commit()
+
 
 def ler_arquivo_upload(uploaded_file):
     """Lê Excel/CSV e devolve o DataFrame bruto."""
@@ -156,7 +195,12 @@ st.sidebar.image("https://cdn-icons-png.flaticon.com/512/7901/7901358.png", widt
 st.sidebar.title("Configurações")
 st.sidebar.markdown("---")
 
-lista_empresas_json = carregar_empresas()
+lista_empresas_banco = carregar_empresas()
+
+if lista_empresas_banco:
+    st.sidebar.success(f"Banco conectado: {len(lista_empresas_banco)} empresas")
+else:
+    st.sidebar.warning("Nenhuma empresa ativa foi carregada do banco.")
 
 # Upload Múltiplo
 arquivos_carregados = st.sidebar.file_uploader(
@@ -179,7 +223,7 @@ if not arquivos_carregados:
 with st.spinner('Processando e unificando relatórios...'):
     dataframes, dataframes_produtividade = processar_arquivos_upload(
         arquivos_carregados,
-        lista_empresas_json
+        lista_empresas_banco
     )
 
 if not dataframes and not dataframes_produtividade:
@@ -500,7 +544,6 @@ with aba6:
         with st.form("form_nova_empresa", clear_on_submit=True):
             novo_nome = st.text_input("Nome da Empresa*", max_chars=100)
             novo_tipo = st.selectbox("Grupo/Tipo*", ["Lista Principal", "Secundária", "Terceirizada"])
-            novo_erp = st.text_input("Sistema ERP/CRM")
             novo_chat = st.text_input("Plataforma de Chat")
             novo_voz = st.text_input("Sistema de Voz / Telefonia")
             
@@ -510,30 +553,31 @@ with aba6:
                 if not novo_nome.strip():
                     st.error("O Nome da Empresa é obrigatório!")
                 else:
-                    novo_registro = {
-                        "nome": novo_nome.upper(),
-                        "tipo": novo_tipo,
-                        "erp": novo_erp,
-                        "chat": novo_chat,
-                        "voz": novo_voz
-                    }
-                    # Adiciona e salva
-                    lista_empresas_json.append(novo_registro)
                     try:
-                        # Salva sempre no diretório data/ conforme solicitado
-                        with open(CAMINHO_JSON, 'w', encoding='utf-8') as f:
-                            json.dump(lista_empresas_json, f, ensure_ascii=False, indent=2)
-                        st.success(f"Empresa '{novo_nome}' adicionada com sucesso!")
-                        st.rerun() # Atualiza a tela para a tabela mostrar o novo dado
+                        cadastrar_empresa_banco(
+                            nome=novo_nome,
+                            tipo=novo_tipo,
+                            sistema_voz=novo_voz,
+                            sistema_chat=novo_chat
+                        )
+                        st.success(f"Empresa '{novo_nome}' adicionada com sucesso no Supabase!")
+                        st.rerun()
                     except Exception as e:
-                        st.error(f"Erro ao salvar no arquivo JSON: {e}")
+                        st.error(f"Erro ao salvar a empresa no Supabase: {e}")
                         
     with col_table:
         st.markdown("**Empresas Ativas**")
-        df_empresas_view = pd.DataFrame(lista_empresas_json)
+        df_empresas_view = pd.DataFrame(lista_empresas_banco)
         if not df_empresas_view.empty:
-            st.dataframe(df_empresas_view, use_container_width=True, height=400)
+            colunas_exibir = ["id", "nome", "tipo", "voz", "chat", "ativo"]
+            colunas_exibir = [c for c in colunas_exibir if c in df_empresas_view.columns]
+            st.dataframe(
+                df_empresas_view[colunas_exibir],
+                width="stretch",
+                height=400,
+                hide_index=True
+            )
         else:
-            st.info("Nenhuma empresa cadastrada no banco de dados.")
+            st.info("Nenhuma empresa cadastrada no Supabase.")
 
 # Fim da execução principal
