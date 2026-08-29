@@ -17,8 +17,13 @@ st.set_page_config(
 try:
     import processamento as proc
     import relatorio_pdf as pdf
-except ImportError:
-    st.error("⚠️ Módulos internos não encontrados. Certifique-se de que processamento.py e relatorio_pdf.py estão na mesma pasta.")
+    import banco as db
+except ImportError as e:
+    st.error(
+        "⚠️ Módulo interno não encontrado. Certifique-se de que "
+        "processamento.py, relatorio_pdf.py e banco.py estão na mesma pasta. "
+        f"Detalhe: {e}"
+    )
     st.stop()
 
 # ==========================================
@@ -99,94 +104,248 @@ def ler_arquivo_upload(uploaded_file):
 def processar_arquivos_upload(arquivos, lista_empresas):
     """
     Detecta automaticamente os formatos recebidos.
-    Também relaciona arquivos Volume + Indicadores de uma mesma empresa
-    e separa relatórios agregados de produtividade (ex.: LIG TOP).
+    Relaciona Volume + Indicadores de uma mesma empresa, separa
+    produtividade agregada e mantém os metadados necessários
+    para salvar cada arquivo no Supabase.
     """
     brutos = []
 
-    # 1) Lê todos os arquivos primeiro
+    # 1) Lê todos os arquivos e calcula o hash de cada upload.
     for uploaded_file in arquivos:
         try:
+            hash_arquivo = db.gerar_hash_arquivo(uploaded_file)
             df_bruto = ler_arquivo_upload(uploaded_file)
+            uploaded_file.seek(0)
+
             if df_bruto.empty:
                 continue
 
             nome_arquivo = uploaded_file.name
-            empresa = proc.identificar_empresa_por_arquivo(nome_arquivo, lista_empresas)
+            empresa = proc.identificar_empresa_por_arquivo(
+                nome_arquivo,
+                lista_empresas
+            )
             tipo = proc.detectar_tipo_planilha(df_bruto, nome_arquivo)
 
             brutos.append({
                 'nome': nome_arquivo,
                 'empresa': empresa,
                 'tipo': tipo,
-                'df': df_bruto
+                'df': df_bruto,
+                'hash': hash_arquivo
             })
+
         except Exception as e:
             st.sidebar.error(f"Erro ao ler {uploaded_file.name}: {e}")
 
-    # 2) Indexa os arquivos de indicadores por empresa
+    # 2) Indexa indicadores por empresa para parear R2/NEX.
     indicadores_por_empresa = {}
+
     for item in brutos:
         if item['tipo'] == 'chat_indicadores':
             empresa = item['empresa']
-            if empresa == 'EMPRESA NÃO IDENTIFICADA' and 'EMPRESA' in item['df'].columns:
-                vals = item['df']['EMPRESA'].dropna().astype(str).str.strip()
+
+            if (
+                empresa == 'EMPRESA NÃO IDENTIFICADA'
+                and 'EMPRESA' in item['df'].columns
+            ):
+                vals = (
+                    item['df']['EMPRESA']
+                    .dropna()
+                    .astype(str)
+                    .str.strip()
+                )
                 if not vals.empty:
                     empresa = vals.iloc[0]
+
             indicadores_por_empresa[str(empresa).upper()] = item['df']
 
     dataframes_atendimentos = []
     dataframes_produtividade = []
+    itens_importacao = []
 
-    # 3) Processa cada arquivo pelo formato detectado
+    # 3) Processa cada arquivo e prepara sua gravação.
     for item in brutos:
         nome = item['nome']
         empresa = item['empresa']
         tipo = item['tipo']
         df_bruto = item['df']
+        hash_arquivo = item['hash']
 
         try:
-            # Indicadores são auxiliares do Volume; não entram sozinhos no master.
+            # Indicadores diários são salvos em tabela própria.
             if tipo == 'chat_indicadores':
+                df_ind = proc.processar_indicadores_chat(df_bruto)
+
+                empresa_final = empresa
+                if 'Empresa' in df_ind.columns:
+                    vals = df_ind['Empresa'].dropna().astype(str).str.strip()
+                    vals = vals[vals != '']
+                    if not vals.empty:
+                        empresa_final = vals.iloc[0]
+
+                itens_importacao.append({
+                    'nome': nome,
+                    'empresa': empresa_final,
+                    'tipo': tipo,
+                    'canal': 'Chat',
+                    'hash': hash_arquivo,
+                    'df': df_ind,
+                    'destino': 'indicadores'
+                })
                 continue
 
-            # LIG TOP é relatório agregado por agente, não atendimento individual.
+            # LIG TOP: relatório agregado por agente.
             if tipo == 'ligtop_agentes':
+                empresa_final = (
+                    empresa
+                    if empresa != 'EMPRESA NÃO IDENTIFICADA'
+                    else 'LIG TOP'
+                )
+
                 df_prod = proc.processar_ligtop_agentes(
                     df_bruto,
-                    empresa if empresa != 'EMPRESA NÃO IDENTIFICADA' else 'LIG TOP'
+                    empresa_final
                 )
+
                 dataframes_produtividade.append(df_prod)
+
+                itens_importacao.append({
+                    'nome': nome,
+                    'empresa': empresa_final,
+                    'tipo': tipo,
+                    'canal': 'Chat',
+                    'hash': hash_arquivo,
+                    'df': df_prod,
+                    'destino': 'produtividade'
+                })
                 continue
 
-            # Para Volume R2/NEX, procura o arquivo de Indicadores correspondente.
+            # Para Volume R2/NEX, procura Indicadores correspondente.
             df_indicadores = None
+
             if tipo == 'chat_volume':
                 chave = str(empresa).upper()
                 df_indicadores = indicadores_por_empresa.get(chave)
 
-                # Fallback pelo nome da empresa dentro da planilha de indicadores
                 if df_indicadores is None:
                     nome_upper = nome.upper()
+                    prefixo = nome_upper.split(' - ')[0]
+
                     for chave_ind, df_ind in indicadores_por_empresa.items():
-                        if chave_ind in nome_upper or nome_upper.split(' - ')[0] in chave_ind:
+                        if chave_ind in nome_upper or prefixo in chave_ind:
                             df_indicadores = df_ind
                             break
 
             df_processado = proc.processar_dataframe_automatico(
                 df_bruto,
                 nome_arquivo=nome,
-                nome_empresa=None if empresa == 'EMPRESA NÃO IDENTIFICADA' else empresa,
+                nome_empresa=(
+                    None
+                    if empresa == 'EMPRESA NÃO IDENTIFICADA'
+                    else empresa
+                ),
                 df_indicadores=df_indicadores
             )
 
             if not df_processado.empty:
                 dataframes_atendimentos.append(df_processado)
 
+                empresa_final = empresa
+                if 'Empresa' in df_processado.columns:
+                    vals = (
+                        df_processado['Empresa']
+                        .dropna()
+                        .astype(str)
+                        .str.strip()
+                    )
+                    vals = vals[vals != '']
+                    if not vals.empty:
+                        empresa_final = vals.iloc[0]
+
+                canal_final = ''
+                if 'Canal' in df_processado.columns:
+                    vals_canal = (
+                        df_processado['Canal']
+                        .dropna()
+                        .astype(str)
+                        .str.strip()
+                    )
+                    vals_canal = vals_canal[vals_canal != '']
+                    if not vals_canal.empty:
+                        canal_final = vals_canal.iloc[0]
+
+                itens_importacao.append({
+                    'nome': nome,
+                    'empresa': empresa_final,
+                    'tipo': tipo,
+                    'canal': canal_final,
+                    'hash': hash_arquivo,
+                    'df': df_processado,
+                    'destino': 'atendimentos'
+                })
+
         except Exception as e:
             st.sidebar.error(f"Erro ao processar {nome}: {e}")
 
-    return dataframes_atendimentos, dataframes_produtividade
+    return (
+        dataframes_atendimentos,
+        dataframes_produtividade,
+        itens_importacao
+    )
+
+
+def obter_periodo_dataframe(df):
+    """Retorna data inicial e final quando o DataFrame possui a coluna Data."""
+    if df is None or df.empty or 'Data' not in df.columns:
+        return None, None
+
+    datas = pd.to_datetime(df['Data'], errors='coerce').dropna()
+    if datas.empty:
+        return None, None
+
+    return datas.min().date(), datas.max().date()
+
+
+def normalizar_indicadores_banco(df):
+    """Compatibiliza as colunas do processamento.py com banco.py."""
+    resultado = df.copy()
+
+    mapa = {
+        'ATENDIMENTOS': 'Atendimentos',
+        'SLA': 'SLA_Percentual'
+    }
+    resultado = resultado.rename(columns=mapa)
+
+    for coluna in [
+        'Atendimentos',
+        'TMA_Seg',
+        'TME_Seg',
+        'TMR_Seg',
+        'SLA_Percentual'
+    ]:
+        if coluna not in resultado.columns:
+            resultado[coluna] = None
+
+    return resultado
+
+
+def excluir_importacao_em_caso_de_erro(importacao_id):
+    """Remove o registro de importação se a gravação principal falhar."""
+    if not importacao_id:
+        return
+
+    try:
+        conn = db.obter_conexao()
+        with conn.session as session:
+            session.execute(
+                sql_text("DELETE FROM importacoes WHERE id = :id"),
+                {'id': importacao_id}
+            )
+            session.commit()
+    except Exception:
+        pass
+
 
 # ==========================================
 # 2. BARRA LATERAL (SIDEBAR)
@@ -221,7 +380,11 @@ if not arquivos_carregados:
 
 # Se chegou aqui, temos arquivos. Vamos processá-los.
 with st.spinner('Processando e unificando relatórios...'):
-    dataframes, dataframes_produtividade = processar_arquivos_upload(
+    (
+        dataframes,
+        dataframes_produtividade,
+        itens_importacao
+    ) = processar_arquivos_upload(
         arquivos_carregados,
         lista_empresas_banco
     )
@@ -291,13 +454,14 @@ periodo_str = f"{datas_selecionadas[0].strftime('%d/%m/%Y')} a {datas_selecionad
 st.caption(f"Dados consolidados para o período: {periodo_str}")
 
 # Prepara abas
-aba1, aba2, aba3, aba4, aba5, aba6 = st.tabs([
-    "📈 Visão Executiva", 
-    "📞 Telefonia e Voz", 
-    "💬 Mensageria e Chat", 
-    "👥 Produtividade (Agentes)", 
-    "📄 Exportar Relatórios", 
-    "⚙️ Gerenciar Empresas"
+aba1, aba2, aba3, aba4, aba5, aba6, aba7 = st.tabs([
+    "📈 Visão Executiva",
+    "📞 Telefonia e Voz",
+    "💬 Mensageria e Chat",
+    "👥 Produtividade (Agentes)",
+    "📄 Exportar Relatórios",
+    "⚙️ Gerenciar Empresas",
+    "💾 Importações"
 ])
 
 # ==========================================
@@ -579,5 +743,185 @@ with aba6:
             )
         else:
             st.info("Nenhuma empresa cadastrada no Supabase.")
+
+# ==========================================
+# 9. ABA 7 - IMPORTAÇÕES / SUPABASE
+# ==========================================
+with aba7:
+    st.subheader("Importações e Histórico")
+    st.write(
+        "Confira os arquivos processados antes de gravá-los permanentemente "
+        "no Supabase."
+    )
+
+    if not itens_importacao:
+        st.info("Nenhum arquivo válido está pronto para importação.")
+    else:
+        resumo_importacoes = []
+
+        for item in itens_importacao:
+            empresa_nome = str(item.get('empresa', '')).strip()
+            hash_arquivo = item.get('hash')
+
+            empresa_id = db.obter_id_empresa(empresa_nome)
+            duplicado = db.importacao_ja_existe(hash_arquivo)
+
+            if not empresa_id:
+                situacao = 'Empresa não cadastrada'
+            elif duplicado:
+                situacao = 'Já importado'
+            else:
+                situacao = 'Pronto para salvar'
+
+            resumo_importacoes.append({
+                'Arquivo': item.get('nome'),
+                'Empresa': empresa_nome,
+                'Tipo': item.get('tipo'),
+                'Canal': item.get('canal'),
+                'Registros': len(item.get('df', pd.DataFrame())),
+                'Situação': situacao
+            })
+
+        st.dataframe(
+            pd.DataFrame(resumo_importacoes),
+            width="stretch",
+            hide_index=True
+        )
+
+        st.caption(
+            "Arquivos marcados como 'Já importado' não serão gravados novamente."
+        )
+
+        if st.button(
+            "Salvar arquivos no Supabase",
+            type="primary",
+            width="stretch"
+        ):
+            total_salvos = 0
+            total_duplicados = 0
+            total_erros = 0
+
+            barra = st.progress(0)
+            status_area = st.empty()
+            quantidade_itens = len(itens_importacao)
+
+            for posicao, item in enumerate(itens_importacao, start=1):
+                nome_arquivo = item.get('nome')
+                empresa_nome = str(item.get('empresa', '')).strip()
+                hash_arquivo = item.get('hash')
+                df_item = item.get('df', pd.DataFrame())
+                destino = item.get('destino')
+                importacao_id = None
+
+                status_area.write(f"Processando: {nome_arquivo}")
+
+                try:
+                    empresa_id = db.obter_id_empresa(empresa_nome)
+
+                    if not empresa_id:
+                        raise ValueError(
+                            f"Empresa '{empresa_nome}' não está cadastrada no banco."
+                        )
+
+                    if db.importacao_ja_existe(hash_arquivo):
+                        total_duplicados += 1
+                        barra.progress(posicao / quantidade_itens)
+                        continue
+
+                    data_inicial, data_final = obter_periodo_dataframe(df_item)
+
+                    importacao_id = db.criar_importacao(
+                        empresa_id=empresa_id,
+                        nome_arquivo=nome_arquivo,
+                        tipo_arquivo=item.get('tipo'),
+                        canal=item.get('canal'),
+                        data_inicial=data_inicial,
+                        data_final=data_final,
+                        hash_arquivo=hash_arquivo,
+                        quantidade_registros=len(df_item),
+                        status='processando'
+                    )
+
+                    if destino == 'atendimentos':
+                        db.salvar_atendimentos(
+                            df_item,
+                            empresa_id,
+                            importacao_id
+                        )
+
+                    elif destino == 'indicadores':
+                        df_ind_banco = normalizar_indicadores_banco(df_item)
+                        db.salvar_indicadores_diarios(
+                            df_ind_banco,
+                            empresa_id,
+                            importacao_id,
+                            canal=item.get('canal') or 'Chat'
+                        )
+
+                    elif destino == 'produtividade':
+                        db.salvar_produtividade_agentes(
+                            df_item,
+                            empresa_id,
+                            importacao_id,
+                            data_inicial=data_inicial,
+                            data_final=data_final
+                        )
+
+                    conn = db.obter_conexao()
+                    with conn.session as session:
+                        session.execute(
+                            sql_text(
+                                """
+                                UPDATE importacoes
+                                SET status = 'processado'
+                                WHERE id = :id
+                                """
+                            ),
+                            {'id': importacao_id}
+                        )
+                        session.commit()
+
+                    total_salvos += 1
+
+                except Exception as e:
+                    total_erros += 1
+                    excluir_importacao_em_caso_de_erro(importacao_id)
+                    st.error(f"Erro em {nome_arquivo}: {e}")
+
+                barra.progress(posicao / quantidade_itens)
+
+            status_area.empty()
+
+            if total_salvos:
+                st.success(
+                    f"{total_salvos} arquivo(s) salvo(s) no Supabase com sucesso."
+                )
+
+            if total_duplicados:
+                st.warning(
+                    f"{total_duplicados} arquivo(s) já estavam importados e foram ignorados."
+                )
+
+            if total_erros == 0 and total_salvos > 0:
+                st.rerun()
+
+    st.markdown("---")
+    st.markdown("**Histórico recente de importações**")
+
+    try:
+        df_historico = db.listar_importacoes(limite=100)
+
+        if df_historico.empty:
+            st.info("Ainda não existem importações gravadas no banco.")
+        else:
+            st.dataframe(
+                df_historico,
+                width="stretch",
+                hide_index=True
+            )
+
+    except Exception as e:
+        st.error(f"Não foi possível carregar o histórico de importações: {e}")
+
 
 # Fim da execução principal
