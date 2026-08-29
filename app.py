@@ -347,581 +347,607 @@ def excluir_importacao_em_caso_de_erro(importacao_id):
         pass
 
 
-# ==========================================
-# 2. BARRA LATERAL (SIDEBAR)
-# ==========================================
-st.sidebar.image("https://cdn-icons-png.flaticon.com/512/7901/7901358.png", width=60) # Ícone genérico de dashboard
-st.sidebar.title("Configurações")
-st.sidebar.markdown("---")
 
+# ==========================================
+# CONSULTAS E FUNÇÕES DA INTERFACE PERSISTENTE
+# ==========================================
+def consultar_produtividade_empresa(empresa_id):
+    conn = db.obter_conexao()
+    consulta = """
+        SELECT
+            p.id,
+            e.nome AS "Empresa",
+            p.data_inicial AS "Data_Inicial",
+            p.data_final AS "Data_Final",
+            p.agente AS "Agente",
+            p.conversas_atribuidas AS "Conversas_Atribuidas",
+            p.resolucoes AS "Resolvidos",
+            p.tempo_primeira_resposta_seg AS "Primeira_Resposta_Seg",
+            p.tempo_resolucao_seg AS "Tempo_Resolucao_Seg",
+            p.tempo_espera_cliente_seg AS "Espera_Cliente_Seg"
+        FROM produtividade_agentes p
+        JOIN empresas e ON e.id = p.empresa_id
+        WHERE p.empresa_id = :empresa_id
+        ORDER BY p.data_final DESC NULLS LAST, p.agente;
+    """
+    with conn.session as session:
+        rows = session.execute(
+            sql_text(consulta), {"empresa_id": empresa_id}
+        ).mappings().all()
+    return pd.DataFrame(rows)
+
+
+def consultar_indicadores_empresa(empresa_id):
+    conn = db.obter_conexao()
+    consulta = """
+        SELECT
+            data AS "Data",
+            canal AS "Canal",
+            atendimentos AS "Atendimentos",
+            tma_seg AS "TMA_Seg",
+            tme_seg AS "TME_Seg",
+            tmr_seg AS "TMR_Seg",
+            sla_percentual AS "SLA_Percentual"
+        FROM indicadores_diarios
+        WHERE empresa_id = :empresa_id
+        ORDER BY data;
+    """
+    with conn.session as session:
+        rows = session.execute(
+            sql_text(consulta), {"empresa_id": empresa_id}
+        ).mappings().all()
+    return pd.DataFrame(rows)
+
+
+def preparar_dataframe_banco(df):
+    if df is None or df.empty:
+        return pd.DataFrame(columns=list(proc.COLUNAS_PADRAO) + ["Data_Parse"])
+
+    resultado = df.copy()
+    for coluna in proc.COLUNAS_PADRAO:
+        if coluna not in resultado.columns:
+            resultado[coluna] = None
+
+    resultado["Data_Parse"] = pd.to_datetime(resultado["Data"], errors="coerce")
+    resultado["Tempo_Espera_Seg"] = pd.to_numeric(
+        resultado["Tempo_Espera_Seg"], errors="coerce"
+    )
+    resultado["Tempo_Conversa_Seg"] = pd.to_numeric(
+        resultado["Tempo_Conversa_Seg"], errors="coerce"
+    )
+    return resultado
+
+
+def filtrar_dataframe_painel(df, chave):
+    if df.empty:
+        return df, "Sem período"
+
+    min_ts = df["Data_Parse"].min()
+    max_ts = df["Data_Parse"].max()
+
+    if pd.isna(min_ts) or pd.isna(max_ts):
+        return df, "Período não identificado"
+
+    min_date = min_ts.date()
+    max_date = max_ts.date()
+
+    periodo = st.date_input(
+        "Período de análise",
+        value=(min_date, max_date),
+        min_value=min_date,
+        max_value=max_date,
+        key=f"periodo_{chave}",
+    )
+
+    filtrado = df.copy()
+    if isinstance(periodo, (tuple, list)) and len(periodo) == 2:
+        inicio, fim = periodo
+        filtrado = filtrado[
+            (filtrado["Data_Parse"].dt.date >= inicio)
+            & (filtrado["Data_Parse"].dt.date <= fim)
+        ]
+        periodo_str = f"{inicio.strftime('%d/%m/%Y')} a {fim.strftime('%d/%m/%Y')}"
+    else:
+        periodo_str = min_date.strftime("%d/%m/%Y")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        canais = sorted(
+            filtrado["Canal"].dropna().astype(str).unique().tolist()
+        )
+        canais_sel = st.multiselect(
+            "Canal",
+            canais,
+            default=canais,
+            key=f"canal_{chave}",
+        )
+        if canais_sel:
+            filtrado = filtrado[filtrado["Canal"].isin(canais_sel)]
+
+    with col2:
+        agentes = sorted(
+            filtrado["Agente"].dropna().astype(str).unique().tolist()
+        )
+        agentes_sel = st.multiselect(
+            "Agentes",
+            agentes,
+            key=f"agentes_{chave}",
+        )
+        if agentes_sel:
+            filtrado = filtrado[filtrado["Agente"].astype(str).isin(agentes_sel)]
+
+    return filtrado, periodo_str
+
+
+def renderizar_painel(df, titulo, chave, mostrar_empresas=False):
+    st.title(titulo)
+
+    df = preparar_dataframe_banco(df)
+    if df.empty:
+        st.info("Nenhum dado importado para esta seleção.")
+        return
+
+    if mostrar_empresas:
+        empresas = sorted(df["Empresa"].dropna().astype(str).unique().tolist())
+        empresas_sel = st.multiselect(
+            "Empresas",
+            empresas,
+            default=empresas,
+            key=f"empresas_{chave}",
+        )
+        if empresas_sel:
+            df = df[df["Empresa"].astype(str).isin(empresas_sel)]
+
+    df_filtrado, periodo_str = filtrar_dataframe_painel(df, chave)
+    st.caption(f"Dados salvos no Supabase — {periodo_str}")
+
+    if df_filtrado.empty:
+        st.warning("Não há dados para os filtros selecionados.")
+        return
+
+    abas = st.tabs([
+        "Visão Executiva",
+        "Telefonia e Voz",
+        "Mensageria e Chat",
+        "Produtividade",
+        "Dados",
+        "Exportar PDF",
+    ])
+
+    with abas[0]:
+        metricas = proc.calcular_metricas(df_filtrado)
+        total_real = int(df_filtrado.shape[0])
+        por_canal = metricas.get("Por Canal", {})
+        vol_voz = sum(v for k, v in por_canal.items() if "Voz" in str(k))
+        vol_chat = sum(v for k, v in por_canal.items() if "Chat" in str(k))
+        sla = metricas.get("SLA (%)")
+
+        c1, c2, c3, c4, c5, c6 = st.columns(6)
+        c1.metric("Volume Total", total_real)
+        c2.metric("% Voz", f"{(vol_voz / total_real * 100):.1f}%" if total_real else "0%")
+        c3.metric("% Chat", f"{(vol_chat / total_real * 100):.1f}%" if total_real else "0%")
+        c4.metric("TMA Geral", metricas.get("TMA", "00:00:00"))
+        c5.metric("TME Geral", metricas.get("TME", "00:00:00"))
+        c6.metric("SLA", f"{sla}%" if sla is not None else "Sem dado")
+
+        st.markdown("---")
+        col_g1, col_g2 = st.columns(2)
+        with col_g1:
+            diario = (
+                df_filtrado.dropna(subset=["Data_Parse"])
+                .groupby([df_filtrado["Data_Parse"].dt.date, "Canal"])
+                .size()
+                .reset_index(name="Volume")
+            )
+            if not diario.empty:
+                fig = px.bar(
+                    diario,
+                    x="Data_Parse",
+                    y="Volume",
+                    color="Canal",
+                    barmode="group",
+                    labels={"Data_Parse": "Data"},
+                )
+                st.plotly_chart(fig, width="stretch")
+
+        with col_g2:
+            def extrair_hora(valor):
+                try:
+                    if isinstance(valor, str):
+                        return int(valor.split(":")[0])
+                    if isinstance(valor, time):
+                        return valor.hour
+                    if hasattr(valor, "hour"):
+                        return valor.hour
+                except Exception:
+                    pass
+                return None
+
+            temp = df_filtrado.copy()
+            temp["Hora_Inteira"] = temp["Hora"].apply(extrair_hora)
+            hora = temp.dropna(subset=["Hora_Inteira"]).groupby("Hora_Inteira").size().reset_index(name="Volume")
+            if not hora.empty:
+                fig = px.line(hora, x="Hora_Inteira", y="Volume", markers=True)
+                st.plotly_chart(fig, width="stretch")
+
+    with abas[1]:
+        voz = df_filtrado[df_filtrado["Canal"].astype(str).str.contains("Voz", case=False, na=False)]
+        if voz.empty:
+            st.info("Nenhum registro de Voz neste período.")
+        else:
+            abandonadas = voz[voz["Status"].astype(str).str.contains("abandono|abandonada", case=False, na=False)].shape[0]
+            c1, c2, c3, c4, c5 = st.columns(5)
+            c1.metric("Total Chamadas", voz.shape[0])
+            c2.metric("Atendidas", voz.shape[0] - abandonadas)
+            c3.metric("Abandonadas", abandonadas)
+            c4.metric("TME", proc.formatar_segundos_para_hora(voz["Tempo_Espera_Seg"].mean()))
+            c5.metric("TMA", proc.formatar_segundos_para_hora(voz["Tempo_Conversa_Seg"].mean()))
+            st.dataframe(voz, width="stretch", height=350)
+
+    with abas[2]:
+        chat = df_filtrado[df_filtrado["Canal"].astype(str).str.contains("Chat", case=False, na=False)]
+        if chat.empty:
+            st.info("Nenhum registro de Chat neste período.")
+        else:
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Total Conversas", chat.shape[0])
+            c2.metric("TME", proc.formatar_segundos_para_hora(chat["Tempo_Espera_Seg"].mean()))
+            c3.metric("TMA", proc.formatar_segundos_para_hora(chat["Tempo_Conversa_Seg"].mean()))
+            st.dataframe(chat, width="stretch", height=350)
+
+    with abas[3]:
+        agentes = df_filtrado[
+            df_filtrado["Agente"].notna()
+            & (df_filtrado["Agente"].astype(str).str.strip() != "")
+            & (df_filtrado["Agente"].astype(str) != "Não Informado")
+        ]
+        if agentes.empty:
+            st.info("Não há dados individuais de agentes neste período.")
+        else:
+            ranking = agentes.groupby("Agente").agg(
+                Volume=("Data", "count"),
+                TMA_Seg=("Tempo_Conversa_Seg", "mean"),
+                TME_Seg=("Tempo_Espera_Seg", "mean"),
+            ).reset_index()
+            ranking["TMA"] = ranking["TMA_Seg"].apply(proc.formatar_segundos_para_hora)
+            ranking["TME"] = ranking["TME_Seg"].apply(proc.formatar_segundos_para_hora)
+            ranking = ranking.sort_values("Volume", ascending=False)
+            st.dataframe(ranking[["Agente", "Volume", "TMA", "TME"]], width="stretch", hide_index=True)
+
+    with abas[4]:
+        st.dataframe(df_filtrado, width="stretch", height=500)
+
+    with abas[5]:
+        try:
+            buffer_pdf = pdf.gerar_pdf_consolidado(df_filtrado, periodo_str)
+            st.download_button(
+                "Baixar Relatório em PDF",
+                data=buffer_pdf,
+                file_name=f"Relatorio_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                mime="application/pdf",
+                type="primary",
+            )
+        except Exception as e:
+            st.error(f"Erro ao gerar PDF: {e}")
+
+
+def abrir_pagina(nome):
+    st.session_state["pagina"] = nome
+
+
+def abrir_empresa(empresa_id, empresa_nome):
+    st.session_state["pagina"] = "empresa"
+    st.session_state["empresa_id"] = empresa_id
+    st.session_state["empresa_nome"] = empresa_nome
+
+
+# ==========================================
+# SIDEBAR PERMANENTE
+# ==========================================
 lista_empresas_banco = carregar_empresas()
 
+if "pagina" not in st.session_state:
+    st.session_state["pagina"] = "visao_geral"
+
+st.sidebar.title("Painel de Controle")
 if lista_empresas_banco:
     st.sidebar.success(f"Banco conectado: {len(lista_empresas_banco)} empresas")
 else:
-    st.sidebar.warning("Nenhuma empresa ativa foi carregada do banco.")
+    st.sidebar.error("Nenhuma empresa foi carregada do banco.")
 
-# Upload Múltiplo
-arquivos_carregados = st.sidebar.file_uploader(
-    "Carregar Relatórios (Excel ou CSV)", 
-    type=["csv", "xlsx"], 
-    accept_multiple_files=True
+st.sidebar.button(
+    "Visão Geral",
+    width="stretch",
+    on_click=abrir_pagina,
+    args=("visao_geral",),
 )
 
-# ==========================================
-# TRATAMENTO DE EXCEÇÃO INICIAL (O CURTO-CIRCUITO)
-# ==========================================
-# Se nenhum arquivo foi carregado, mostramos uma mensagem de boas-vindas e paramos a execução.
-if not arquivos_carregados:
-    st.title("📊 Painel de Controle Operacional")
-    st.info("👋 Bem-vindo ao sistema de relatórios consolidados.")
-    st.write("Para começar, utilize a barra lateral à esquerda para fazer o upload dos relatórios exportados das suas plataformas de Voz e Chat.")
-    st.stop() # INTERROMPE A EXECUÇÃO AQUI. Impede erros de DataFrames vazios abaixo.
-
-# Se chegou aqui, temos arquivos. Vamos processá-los.
-with st.spinner('Processando e unificando relatórios...'):
-    (
-        dataframes,
-        dataframes_produtividade,
-        itens_importacao
-    ) = processar_arquivos_upload(
-        arquivos_carregados,
-        lista_empresas_banco
+st.sidebar.markdown("### Empresas")
+for empresa in lista_empresas_banco:
+    st.sidebar.button(
+        empresa["nome"],
+        key=f"empresa_{empresa['id']}",
+        width="stretch",
+        on_click=abrir_empresa,
+        args=(empresa["id"], empresa["nome"]),
     )
 
-if not dataframes and not dataframes_produtividade:
-    st.error("Não foi possível extrair dados válidos dos arquivos enviados. Verifique os formatos.")
-    st.stop()
-
-# Concatena os atendimentos em um ÚNICO DataFrame Master
-if dataframes:
-    df_master = pd.concat(dataframes, ignore_index=True)
-else:
-    df_master = pd.DataFrame(columns=proc.COLUNAS_PADRAO)
-
-# Relatórios agregados de produtividade ficam separados do volume de atendimentos
-if dataframes_produtividade:
-    df_produtividade_extra = pd.concat(dataframes_produtividade, ignore_index=True)
-else:
-    df_produtividade_extra = pd.DataFrame()
-
-# Garante que Data seja formato Datetime para os filtros
-df_master['Data_Parse'] = pd.to_datetime(df_master['Data'], errors='coerce')
-
-st.sidebar.markdown("### Filtros de Análise")
-
-# Filtro de Data
-min_date = df_master['Data_Parse'].min().date() if not pd.isna(df_master['Data_Parse'].min()) else datetime.today().date()
-max_date = df_master['Data_Parse'].max().date() if not pd.isna(df_master['Data_Parse'].max()) else datetime.today().date()
-
-datas_selecionadas = st.sidebar.date_input(
-    "Período de Análise",
-    value=(min_date, max_date),
-    min_value=min_date,
-    max_value=max_date
+st.sidebar.markdown("---")
+st.sidebar.button(
+    "Importar Dados",
+    width="stretch",
+    on_click=abrir_pagina,
+    args=("importar",),
+)
+st.sidebar.button(
+    "Histórico de Importações",
+    width="stretch",
+    on_click=abrir_pagina,
+    args=("historico",),
+)
+st.sidebar.button(
+    "Configurações",
+    width="stretch",
+    on_click=abrir_pagina,
+    args=("configuracoes",),
 )
 
-# Filtro de Empresa
-empresas_disponiveis = df_master['Empresa'].dropna().unique().tolist()
-empresas_selecionadas = st.sidebar.multiselect("Empresas", empresas_disponiveis, default=empresas_disponiveis)
+pagina = st.session_state.get("pagina", "visao_geral")
 
-# Filtro de Canal
-canais_disponiveis = df_master['Canal'].dropna().unique().tolist()
-canais_selecionados = st.sidebar.multiselect("Canal", canais_disponiveis, default=canais_disponiveis)
-
-# Filtro de Agente
-agentes_disponiveis = sorted(df_master['Agente'].dropna().astype(str).unique().tolist())
-agentes_selecionados = st.sidebar.multiselect("Agentes", agentes_disponiveis)
-
-# Aplicando os filtros matematicamente
-df_filtrado = df_master.copy()
-
-if len(datas_selecionadas) == 2:
-    start_d, end_d = datas_selecionadas
-    df_filtrado = df_filtrado[(df_filtrado['Data_Parse'].dt.date >= start_d) & (df_filtrado['Data_Parse'].dt.date <= end_d)]
-
-if empresas_selecionadas:
-    df_filtrado = df_filtrado[df_filtrado['Empresa'].isin(empresas_selecionadas)]
-
-if canais_selecionados:
-    df_filtrado = df_filtrado[df_filtrado['Canal'].isin(canais_selecionados)]
-
-if agentes_selecionados:
-    df_filtrado = df_filtrado[df_filtrado['Agente'].isin(agentes_selecionados)]
-
-st.title("📊 Painel de Controle Operacional")
-periodo_str = f"{datas_selecionadas[0].strftime('%d/%m/%Y')} a {datas_selecionadas[1].strftime('%d/%m/%Y')}" if len(datas_selecionadas) == 2 else "Período Único"
-st.caption(f"Dados consolidados para o período: {periodo_str}")
-
-# Prepara abas
-aba1, aba2, aba3, aba4, aba5, aba6, aba7 = st.tabs([
-    "📈 Visão Executiva",
-    "📞 Telefonia e Voz",
-    "💬 Mensageria e Chat",
-    "👥 Produtividade (Agentes)",
-    "📄 Exportar Relatórios",
-    "⚙️ Gerenciar Empresas",
-    "💾 Importações"
-])
 
 # ==========================================
-# 3. ABA 1 - VISÃO EXECUTIVA
+# PÁGINA: VISÃO GERAL
 # ==========================================
-with aba1:
-    if df_filtrado.empty:
-        st.warning("Não há dados para os filtros selecionados.")
+if pagina == "visao_geral":
+    try:
+        with st.spinner("Carregando dados salvos no Supabase..."):
+            df_geral = db.consultar_atendimentos()
+        renderizar_painel(
+            df_geral,
+            "Painel Geral das Operações",
+            "geral",
+            mostrar_empresas=True,
+        )
+    except Exception as e:
+        st.error(f"Não foi possível carregar os dados do banco: {e}")
+
+
+# ==========================================
+# PÁGINA: EMPRESA INDIVIDUAL
+# ==========================================
+elif pagina == "empresa":
+    empresa_id = st.session_state.get("empresa_id")
+    empresa_nome = st.session_state.get("empresa_nome", "Empresa")
+
+    if not empresa_id:
+        st.info("Selecione uma empresa na barra lateral.")
     else:
-        # Pega as métricas do processamento.py
-        metricas = proc.calcular_metricas(df_filtrado)
-        
-        # Ajusta cálculo percentual de Canais
-        total = metricas.get("Total de Atendimentos", 1)
-        total = total if total > 0 else 1
-        vol_voz = sum([v for k, v in metricas.get("Por Canal", {}).items() if 'Voz' in k])
-        vol_chat = sum([v for k, v in metricas.get("Por Canal", {}).items() if 'Chat' in k])
-        
-        # Cards (st.metric)
-        c1, c2, c3, c4, c5, c6 = st.columns(6)
-        c1.metric("Volume Total", total)
-        c2.metric("% Voz", f"{(vol_voz/total)*100:.1f}%", f"{vol_voz} chamadas")
-        c3.metric("% Chat", f"{(vol_chat/total)*100:.1f}%", f"{vol_chat} conversas")
-        c4.metric("TMA Geral", metricas.get("TMA", "00:00:00"))
-        c5.metric("TME Geral", metricas.get("TME", "00:00:00"))
-        sla_valor = metricas.get('SLA (%)')
-        c6.metric("SLA Atingido", f"{sla_valor}%" if sla_valor is not None else "Sem dado")
-        
-        st.markdown("---")
-        
-        # Gráficos
-        col_graf1, col_graf2 = st.columns(2)
-        
-        with col_graf1:
-            st.markdown("**Volume Diário por Canal**")
-            df_diario = df_filtrado.groupby([df_filtrado['Data_Parse'].dt.date, 'Canal']).size().reset_index(name='Volume')
-            if not df_diario.empty:
-                fig_bar = px.bar(df_diario, x='Data_Parse', y='Volume', color='Canal', barmode='group', 
-                                 labels={'Data_Parse': 'Data', 'Volume': 'Qtd Atendimentos'},
-                                 color_discrete_sequence=['#1f77b4', '#ff7f0e'])
-                fig_bar.update_layout(margin=dict(l=0, r=0, t=30, b=0))
-                st.plotly_chart(fig_bar, use_container_width=True)
-            
-        with col_graf2:
-            st.markdown("**Distribuição por Faixa de Horário (Mapa de Calor)**")
-            # Extraindo a hora (tentativa segura)
-            def extrair_hora(h):
-                try:
-                    if isinstance(h, str): return int(h.split(':')[0])
-                    elif isinstance(h, time): return h.hour
-                    else: return 0
-                except: return 0
-                
-            df_filtrado['Hora_Inteira'] = df_filtrado['Hora'].apply(extrair_hora)
-            df_hora = df_filtrado.groupby('Hora_Inteira').size().reset_index(name='Volume')
-            
-            if not df_hora.empty:
-                fig_line = px.line(df_hora, x='Hora_Inteira', y='Volume', markers=True,
-                                   labels={'Hora_Inteira': 'Hora do Dia (0-23)', 'Volume': 'Pico de Chamadas'},
-                                   line_shape='spline')
-                fig_line.update_layout(margin=dict(l=0, r=0, t=30, b=0))
-                fig_line.update_traces(line_color='#2ca02c', fill='tozeroy')
-                st.plotly_chart(fig_line, use_container_width=True)
-
-# ==========================================
-# 4. ABA 2 - TELEFONIA E VOZ
-# ==========================================
-with aba2:
-    df_voz = df_filtrado[df_filtrado['Canal'].str.contains('Voz', case=False, na=False)]
-    
-    if df_voz.empty:
-        st.info("Nenhum registro de Voz encontrado neste período/filtro.")
-    else:
-        st.subheader("Indicadores Exclusivos de Voz")
-        
-        # Filtra status para ver o que é atendimento e o que é abandono
-        abandonadas = df_voz[df_voz['Status'].astype(str).str.contains('abandono|abandonada', case=False)].shape[0]
-        atendidas = df_voz.shape[0] - abandonadas
-        tme_voz = proc.formatar_segundos_para_hora(df_voz['Tempo_Espera_Seg'].mean())
-        tma_voz = proc.formatar_segundos_para_hora(df_voz['Tempo_Conversa_Seg'].mean())
-        
-        cv1, cv2, cv3, cv4, cv5 = st.columns(5)
-        cv1.metric("Total Chamadas", df_voz.shape[0])
-        cv2.metric("Atendidas", atendidas)
-        cv3.metric("Abandonadas", abandonadas, f"{(abandonadas/df_voz.shape[0])*100:.1f}%", delta_color="inverse")
-        cv4.metric("TME (Fila)", tme_voz)
-        cv5.metric("TMA (Conversa)", tma_voz)
-        
-        col_v1, col_v2 = st.columns(2)
-        with col_v1:
-            st.markdown("**Distribuição por Fila**")
-            df_fila = df_voz['Fila'].value_counts().reset_index()
-            df_fila.columns = ['Fila', 'Volume']
-            fig_fila = px.bar(df_fila, x='Fila', y='Volume', color='Fila')
-            st.plotly_chart(fig_fila, use_container_width=True)
-            
-        with col_v2:
-            st.markdown("**Motivos de Status**")
-            df_status = df_voz['Status'].value_counts().reset_index()
-            df_status.columns = ['Status', 'Quantidade']
-            fig_status = px.pie(df_status, names='Status', values='Quantidade', hole=0.4)
-            st.plotly_chart(fig_status, use_container_width=True)
-            
-        st.markdown("**Detalhamento de Registros (Busca)**")
-        busca_protocolo = st.text_input("Buscar por Protocolo (Voz):")
-        df_tabela_voz = df_voz.copy()
-        if busca_protocolo:
-            df_tabela_voz = df_tabela_voz[df_tabela_voz['Protocolo'].astype(str).str.contains(busca_protocolo)]
-        st.dataframe(df_tabela_voz, use_container_width=True, height=200)
-
-# ==========================================
-# 5. ABA 3 - MENSAGERIA E CHAT
-# ==========================================
-with aba3:
-    df_chat = df_filtrado[df_filtrado['Canal'].str.contains('Chat', case=False, na=False)]
-    
-    if df_chat.empty:
-        st.info("Nenhum registro de Chat encontrado neste período/filtro.")
-    else:
-        st.subheader("Indicadores Exclusivos de Chat")
-        
-        tme_chat = proc.formatar_segundos_para_hora(df_chat['Tempo_Espera_Seg'].mean())
-        tma_chat = proc.formatar_segundos_para_hora(df_chat['Tempo_Conversa_Seg'].mean())
-        
-        cc1, cc2, cc3 = st.columns(3)
-        cc1.metric("Total Conversas", df_chat.shape[0])
-        cc2.metric("Tempo Médio de Fila", tme_chat)
-        cc3.metric("TMA (Resolução)", tma_chat)
-        
-        st.markdown("**Comparativo entre Plataformas de Chat**")
-        df_plat = df_chat['Canal'].value_counts().reset_index()
-        df_plat.columns = ['Plataforma', 'Volume']
-        fig_plat = px.bar(df_plat, y='Plataforma', x='Volume', orientation='h', color='Plataforma')
-        st.plotly_chart(fig_plat, use_container_width=True)
-        
-        st.markdown("**Detalhamento de Registros (Chat)**")
-        st.dataframe(df_chat, use_container_width=True, height=250)
-
-# ==========================================
-# 6. ABA 4 - PRODUTIVIDADE DOS AGENTES
-# ==========================================
-with aba4:
-    st.subheader("Ranking e Performance da Equipe")
-    
-    # Filtra vazios
-    df_agentes = df_filtrado[df_filtrado['Agente'].astype(str).str.strip() != '']
-    df_agentes = df_agentes[df_agentes['Agente'] != 'Não Informado']
-    
-    if df_agentes.empty:
-        st.info("Não há dados suficientes de Agentes para gerar o ranking.")
-    else:
-        # Agrupa e calcula
-        ranking = df_agentes.groupby('Agente').agg(
-            Volume=('Data', 'count'),
-            TMA_Seg=('Tempo_Conversa_Seg', 'mean'),
-            SLA_Atingido=('Nivel_Servico', lambda x: x.astype(str).str.contains('dentro|sim|atingido', case=False).sum())
-        ).reset_index()
-        
-        # Formatação
-        ranking['TMA'] = ranking['TMA_Seg'].apply(proc.formatar_segundos_para_hora)
-        ranking['Conformidade (%)'] = round((ranking['SLA_Atingido'] / ranking['Volume']) * 100, 1)
-        ranking = ranking.sort_values(by='Volume', ascending=False)
-        
-        col_r1, col_r2 = st.columns([2, 3])
-        
-        with col_r1:
-            st.markdown("**Top 10 Operadores (Volume)**")
-            top10 = ranking.head(10)
-            fig_top = px.bar(top10, x='Volume', y='Agente', orientation='h', text='Volume')
-            fig_top.update_layout(yaxis={'categoryorder':'total ascending'}, margin=dict(l=0, r=0, t=0, b=0))
-            st.plotly_chart(fig_top, use_container_width=True)
-            
-        with col_r2:
-            st.markdown("**Tabela Completa de Produtividade**")
-            st.dataframe(
-                ranking[['Agente', 'Volume', 'TMA', 'Conformidade (%)']],
-                use_container_width=True,
-                height=350
-            )
-
-
-    # Relatórios agregados adicionais (ex.: LIG TOP)
-    if not df_produtividade_extra.empty:
-        st.markdown("---")
-        st.subheader("Produtividade por Plataforma / Relatório Agregado")
-
-        df_prod_view = df_produtividade_extra.copy()
-        if empresas_selecionadas:
-            df_prod_view = df_prod_view[df_prod_view['Empresa'].isin(empresas_selecionadas)]
-
-        if not df_prod_view.empty:
-            df_prod_view['Tempo médio de resolução'] = df_prod_view['Tempo_Resolucao_Seg'].apply(proc.formatar_segundos_para_hora)
-            df_prod_view['Tempo médio de primeira resposta'] = df_prod_view['Primeira_Resposta_Seg'].apply(proc.formatar_segundos_para_hora)
-            df_prod_view['Tempo médio de espera do cliente'] = df_prod_view['Espera_Cliente_Seg'].apply(proc.formatar_segundos_para_hora)
-
-            st.dataframe(
-                df_prod_view[[
-                    'Empresa', 'Agente', 'Conversas_Atribuidas', 'Resolvidos',
-                    'Tempo médio de primeira resposta',
-                    'Tempo médio de resolução',
-                    'Tempo médio de espera do cliente'
-                ]],
-                use_container_width=True,
-                height=350
-            )
-
-# ==========================================
-# 7. ABA 5 - EXPORTAÇÃO DE RELATÓRIOS
-# ==========================================
-with aba5:
-    st.subheader("Exportar Documento Oficial")
-    st.write("Gere um relatório em PDF consolidado com todos os dados e filtros atualmente aplicados na barra lateral.")
-    
-    st.info(f"O documento incluirá **{df_filtrado.shape[0]} atendimentos** referentes ao período de **{periodo_str}**.")
-    
-    # Botão de download
-    if not df_filtrado.empty:
-        # Só gera o PDF em memória quando o botão é renderizado
         try:
-            buffer_pdf = pdf.gerar_pdf_consolidado(df_filtrado, periodo_str)
-            
-            st.download_button(
-                label="📥 Baixar Relatório em PDF",
-                data=buffer_pdf,
-                file_name=f"Relatorio_Consolidado_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
-                mime="application/pdf",
-                type="primary"
+            with st.spinner(f"Carregando dados de {empresa_nome}..."):
+                df_empresa = db.consultar_atendimentos(empresa_id=empresa_id)
+
+            renderizar_painel(
+                df_empresa,
+                f"{empresa_nome}",
+                f"empresa_{empresa_id}",
+                mostrar_empresas=False,
             )
+
+            st.markdown("---")
+            st.subheader("Histórico da empresa")
+            historico_empresa = db.listar_importacoes(
+                empresa_id=empresa_id,
+                limite=100,
+            )
+            if historico_empresa.empty:
+                st.info("Nenhuma importação registrada para esta empresa.")
+            else:
+                st.dataframe(historico_empresa, width="stretch", hide_index=True)
+
+            produtividade = consultar_produtividade_empresa(empresa_id)
+            if not produtividade.empty:
+                with st.expander("Produtividade agregada salva"):
+                    view = produtividade.copy()
+                    view["TMA Resolução"] = view["Tempo_Resolucao_Seg"].apply(proc.formatar_segundos_para_hora)
+                    view["Primeira Resposta"] = view["Primeira_Resposta_Seg"].apply(proc.formatar_segundos_para_hora)
+                    st.dataframe(view, width="stretch", hide_index=True)
+
+            indicadores = consultar_indicadores_empresa(empresa_id)
+            if not indicadores.empty:
+                with st.expander("Indicadores diários salvos"):
+                    view = indicadores.copy()
+                    view["TMA"] = view["TMA_Seg"].apply(proc.formatar_segundos_para_hora)
+                    view["TME"] = view["TME_Seg"].apply(proc.formatar_segundos_para_hora)
+                    st.dataframe(view, width="stretch", hide_index=True)
+
         except Exception as e:
-            st.error(f"Erro ao gerar o documento PDF: {e}")
-    else:
-        st.warning("Não há dados para exportar. Remova alguns filtros.")
+            st.error(f"Erro ao carregar o painel de {empresa_nome}: {e}")
+
 
 # ==========================================
-# 8. ABA 6 - GERENCIAMENTO DE EMPRESAS
+# PÁGINA: IMPORTAR DADOS
 # ==========================================
-with aba6:
-    st.subheader("Base de Operações Cadastradas")
-    
-    col_form, col_table = st.columns([1, 2])
-    
+elif pagina == "importar":
+    st.title("Importar Dados")
+    st.write(
+        "Envie os relatórios aqui. Depois que forem salvos no Supabase, "
+        "você pode remover os arquivos do upload: os dados continuarão nos painéis."
+    )
+
+    arquivos_carregados = st.file_uploader(
+        "Carregar Relatórios (Excel ou CSV)",
+        type=["csv", "xlsx"],
+        accept_multiple_files=True,
+        key="upload_importacoes",
+    )
+
+    if not arquivos_carregados:
+        st.info("Selecione uma ou mais planilhas para importar.")
+    else:
+        with st.spinner("Processando arquivos..."):
+            dataframes, dataframes_produtividade, itens_importacao = processar_arquivos_upload(
+                arquivos_carregados,
+                lista_empresas_banco,
+            )
+
+        if not itens_importacao:
+            st.error("Nenhum arquivo válido foi identificado.")
+        else:
+            resumo = []
+            for item in itens_importacao:
+                empresa_nome = str(item.get("empresa", "")).strip()
+                empresa_id = db.obter_id_empresa(empresa_nome)
+                duplicado = db.importacao_ja_existe(item.get("hash"))
+
+                if not empresa_id:
+                    situacao = "Empresa não cadastrada"
+                elif duplicado:
+                    situacao = "Já importado"
+                else:
+                    situacao = "Pronto para salvar"
+
+                resumo.append({
+                    "Arquivo": item.get("nome"),
+                    "Empresa": empresa_nome,
+                    "Tipo": item.get("tipo"),
+                    "Canal": item.get("canal"),
+                    "Registros": len(item.get("df", pd.DataFrame())),
+                    "Situação": situacao,
+                })
+
+            st.dataframe(pd.DataFrame(resumo), width="stretch", hide_index=True)
+
+            if st.button("Salvar arquivos no Supabase", type="primary", width="stretch"):
+                salvos = 0
+                duplicados = 0
+                erros = 0
+                progresso = st.progress(0)
+                total_itens = len(itens_importacao)
+
+                for posicao, item in enumerate(itens_importacao, 1):
+                    importacao_id = None
+                    nome_arquivo = item.get("nome")
+                    try:
+                        empresa_nome = str(item.get("empresa", "")).strip()
+                        empresa_id = db.obter_id_empresa(empresa_nome)
+                        if not empresa_id:
+                            raise ValueError(f"Empresa '{empresa_nome}' não cadastrada.")
+
+                        if db.importacao_ja_existe(item.get("hash")):
+                            duplicados += 1
+                            progresso.progress(posicao / total_itens)
+                            continue
+
+                        df_item = item.get("df", pd.DataFrame())
+                        data_inicial, data_final = obter_periodo_dataframe(df_item)
+
+                        importacao_id = db.criar_importacao(
+                            empresa_id=empresa_id,
+                            nome_arquivo=nome_arquivo,
+                            tipo_arquivo=item.get("tipo"),
+                            canal=item.get("canal"),
+                            data_inicial=data_inicial,
+                            data_final=data_final,
+                            hash_arquivo=item.get("hash"),
+                            quantidade_registros=len(df_item),
+                            status="processando",
+                        )
+
+                        if item.get("destino") == "atendimentos":
+                            db.salvar_atendimentos(df_item, empresa_id, importacao_id)
+                        elif item.get("destino") == "indicadores":
+                            db.salvar_indicadores_diarios(
+                                normalizar_indicadores_banco(df_item),
+                                empresa_id,
+                                importacao_id,
+                                canal=item.get("canal") or "Chat",
+                            )
+                        elif item.get("destino") == "produtividade":
+                            db.salvar_produtividade_agentes(
+                                df_item,
+                                empresa_id,
+                                importacao_id,
+                                data_inicial=data_inicial,
+                                data_final=data_final,
+                            )
+
+                        conn = db.obter_conexao()
+                        with conn.session as session:
+                            session.execute(
+                                sql_text("UPDATE importacoes SET status = 'processado' WHERE id = :id"),
+                                {"id": importacao_id},
+                            )
+                            session.commit()
+                        salvos += 1
+
+                    except Exception as e:
+                        erros += 1
+                        excluir_importacao_em_caso_de_erro(importacao_id)
+                        st.error(f"Erro em {nome_arquivo}: {e}")
+
+                    progresso.progress(posicao / total_itens)
+
+                if salvos:
+                    st.success(f"{salvos} arquivo(s) salvo(s) com sucesso.")
+                if duplicados:
+                    st.warning(f"{duplicados} arquivo(s) já estavam salvos e foram ignorados.")
+                if erros == 0 and salvos > 0:
+                    st.info("Os dados já estão disponíveis nos painéis das empresas na barra lateral.")
+
+
+# ==========================================
+# PÁGINA: HISTÓRICO
+# ==========================================
+elif pagina == "historico":
+    st.title("Histórico de Importações")
+    try:
+        historico = db.listar_importacoes(limite=500)
+        if historico.empty:
+            st.info("Ainda não existem importações no banco.")
+        else:
+            st.dataframe(historico, width="stretch", hide_index=True)
+    except Exception as e:
+        st.error(f"Não foi possível carregar o histórico: {e}")
+
+
+# ==========================================
+# PÁGINA: CONFIGURAÇÕES
+# ==========================================
+elif pagina == "configuracoes":
+    st.title("Configurações")
+    st.subheader("Empresas cadastradas")
+
+    col_form, col_tabela = st.columns([1, 2])
     with col_form:
-        st.markdown("**Cadastrar Nova Operação**")
         with st.form("form_nova_empresa", clear_on_submit=True):
-            novo_nome = st.text_input("Nome da Empresa*", max_chars=100)
-            novo_tipo = st.selectbox("Grupo/Tipo*", ["Lista Principal", "Secundária", "Terceirizada"])
+            novo_nome = st.text_input("Nome da Empresa*")
+            novo_tipo = st.selectbox(
+                "Grupo/Tipo*",
+                ["Lista Principal", "Secundária", "Terceirizada"],
+            )
             novo_chat = st.text_input("Plataforma de Chat")
             novo_voz = st.text_input("Sistema de Voz / Telefonia")
-            
-            submit_empresa = st.form_submit_button("Salvar Empresa", type="primary")
-            
-            if submit_empresa:
+            enviar = st.form_submit_button("Salvar Empresa", type="primary")
+            if enviar:
                 if not novo_nome.strip():
-                    st.error("O Nome da Empresa é obrigatório!")
+                    st.error("O nome da empresa é obrigatório.")
                 else:
                     try:
                         cadastrar_empresa_banco(
-                            nome=novo_nome,
-                            tipo=novo_tipo,
-                            sistema_voz=novo_voz,
-                            sistema_chat=novo_chat
+                            novo_nome,
+                            novo_tipo,
+                            novo_voz,
+                            novo_chat,
                         )
-                        st.success(f"Empresa '{novo_nome}' adicionada com sucesso no Supabase!")
+                        st.success("Empresa cadastrada com sucesso.")
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Erro ao salvar a empresa no Supabase: {e}")
-                        
-    with col_table:
-        st.markdown("**Empresas Ativas**")
-        df_empresas_view = pd.DataFrame(lista_empresas_banco)
-        if not df_empresas_view.empty:
-            colunas_exibir = ["id", "nome", "tipo", "voz", "chat", "ativo"]
-            colunas_exibir = [c for c in colunas_exibir if c in df_empresas_view.columns]
-            st.dataframe(
-                df_empresas_view[colunas_exibir],
-                width="stretch",
-                height=400,
-                hide_index=True
-            )
+                        st.error(f"Erro ao cadastrar empresa: {e}")
+
+    with col_tabela:
+        empresas_df = pd.DataFrame(lista_empresas_banco)
+        if empresas_df.empty:
+            st.info("Nenhuma empresa cadastrada.")
         else:
-            st.info("Nenhuma empresa cadastrada no Supabase.")
-
-# ==========================================
-# 9. ABA 7 - IMPORTAÇÕES / SUPABASE
-# ==========================================
-with aba7:
-    st.subheader("Importações e Histórico")
-    st.write(
-        "Confira os arquivos processados antes de gravá-los permanentemente "
-        "no Supabase."
-    )
-
-    if not itens_importacao:
-        st.info("Nenhum arquivo válido está pronto para importação.")
-    else:
-        resumo_importacoes = []
-
-        for item in itens_importacao:
-            empresa_nome = str(item.get('empresa', '')).strip()
-            hash_arquivo = item.get('hash')
-
-            empresa_id = db.obter_id_empresa(empresa_nome)
-            duplicado = db.importacao_ja_existe(hash_arquivo)
-
-            if not empresa_id:
-                situacao = 'Empresa não cadastrada'
-            elif duplicado:
-                situacao = 'Já importado'
-            else:
-                situacao = 'Pronto para salvar'
-
-            resumo_importacoes.append({
-                'Arquivo': item.get('nome'),
-                'Empresa': empresa_nome,
-                'Tipo': item.get('tipo'),
-                'Canal': item.get('canal'),
-                'Registros': len(item.get('df', pd.DataFrame())),
-                'Situação': situacao
-            })
-
-        st.dataframe(
-            pd.DataFrame(resumo_importacoes),
-            width="stretch",
-            hide_index=True
-        )
-
-        st.caption(
-            "Arquivos marcados como 'Já importado' não serão gravados novamente."
-        )
-
-        if st.button(
-            "Salvar arquivos no Supabase",
-            type="primary",
-            width="stretch"
-        ):
-            total_salvos = 0
-            total_duplicados = 0
-            total_erros = 0
-
-            barra = st.progress(0)
-            status_area = st.empty()
-            quantidade_itens = len(itens_importacao)
-
-            for posicao, item in enumerate(itens_importacao, start=1):
-                nome_arquivo = item.get('nome')
-                empresa_nome = str(item.get('empresa', '')).strip()
-                hash_arquivo = item.get('hash')
-                df_item = item.get('df', pd.DataFrame())
-                destino = item.get('destino')
-                importacao_id = None
-
-                status_area.write(f"Processando: {nome_arquivo}")
-
-                try:
-                    empresa_id = db.obter_id_empresa(empresa_nome)
-
-                    if not empresa_id:
-                        raise ValueError(
-                            f"Empresa '{empresa_nome}' não está cadastrada no banco."
-                        )
-
-                    if db.importacao_ja_existe(hash_arquivo):
-                        total_duplicados += 1
-                        barra.progress(posicao / quantidade_itens)
-                        continue
-
-                    data_inicial, data_final = obter_periodo_dataframe(df_item)
-
-                    importacao_id = db.criar_importacao(
-                        empresa_id=empresa_id,
-                        nome_arquivo=nome_arquivo,
-                        tipo_arquivo=item.get('tipo'),
-                        canal=item.get('canal'),
-                        data_inicial=data_inicial,
-                        data_final=data_final,
-                        hash_arquivo=hash_arquivo,
-                        quantidade_registros=len(df_item),
-                        status='processando'
-                    )
-
-                    if destino == 'atendimentos':
-                        db.salvar_atendimentos(
-                            df_item,
-                            empresa_id,
-                            importacao_id
-                        )
-
-                    elif destino == 'indicadores':
-                        df_ind_banco = normalizar_indicadores_banco(df_item)
-                        db.salvar_indicadores_diarios(
-                            df_ind_banco,
-                            empresa_id,
-                            importacao_id,
-                            canal=item.get('canal') or 'Chat'
-                        )
-
-                    elif destino == 'produtividade':
-                        db.salvar_produtividade_agentes(
-                            df_item,
-                            empresa_id,
-                            importacao_id,
-                            data_inicial=data_inicial,
-                            data_final=data_final
-                        )
-
-                    conn = db.obter_conexao()
-                    with conn.session as session:
-                        session.execute(
-                            sql_text(
-                                """
-                                UPDATE importacoes
-                                SET status = 'processado'
-                                WHERE id = :id
-                                """
-                            ),
-                            {'id': importacao_id}
-                        )
-                        session.commit()
-
-                    total_salvos += 1
-
-                except Exception as e:
-                    total_erros += 1
-                    excluir_importacao_em_caso_de_erro(importacao_id)
-                    st.error(f"Erro em {nome_arquivo}: {e}")
-
-                barra.progress(posicao / quantidade_itens)
-
-            status_area.empty()
-
-            if total_salvos:
-                st.success(
-                    f"{total_salvos} arquivo(s) salvo(s) no Supabase com sucesso."
-                )
-
-            if total_duplicados:
-                st.warning(
-                    f"{total_duplicados} arquivo(s) já estavam importados e foram ignorados."
-                )
-
-            if total_erros == 0 and total_salvos > 0:
-                st.rerun()
-
-    st.markdown("---")
-    st.markdown("**Histórico recente de importações**")
-
-    try:
-        df_historico = db.listar_importacoes(limite=100)
-
-        if df_historico.empty:
-            st.info("Ainda não existem importações gravadas no banco.")
-        else:
-            st.dataframe(
-                df_historico,
-                width="stretch",
-                hide_index=True
-            )
-
-    except Exception as e:
-        st.error(f"Não foi possível carregar o histórico de importações: {e}")
-
-
-# Fim da execução principal
+            cols = [c for c in ["id", "nome", "tipo", "voz", "chat", "ativo"] if c in empresas_df.columns]
+            st.dataframe(empresas_df[cols], width="stretch", hide_index=True, height=500)
