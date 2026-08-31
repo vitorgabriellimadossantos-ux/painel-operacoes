@@ -32,33 +32,314 @@ except ImportError as e:
 # ==========================================
 st.markdown("""
 <style>
-.stApp { background: #f6f8fc; }
-[data-testid="stSidebar"] { background: #111827; border-right: 1px solid #1f2937; }
-[data-testid="stSidebar"] * { color: #f9fafb; }
+/* =========================================================
+   TEMA VISUAL - CONTRASTE FORÇADO
+   ========================================================= */
+
+/* Página principal */
+html, body, [data-testid="stAppViewContainer"], .stApp {
+    background: #F4F7FB !important;
+    color: #172033 !important;
+}
+
+.block-container {
+    padding-top: 1.7rem !important;
+    padding-bottom: 3rem !important;
+    max-width: 1500px !important;
+}
+
+/* Texto da área principal */
+[data-testid="stMainBlockContainer"] p,
+[data-testid="stMainBlockContainer"] span,
+[data-testid="stMainBlockContainer"] label,
+[data-testid="stMainBlockContainer"] h1,
+[data-testid="stMainBlockContainer"] h2,
+[data-testid="stMainBlockContainer"] h3,
+[data-testid="stMainBlockContainer"] h4,
+[data-testid="stMainBlockContainer"] h5,
+[data-testid="stMainBlockContainer"] h6 {
+    color: #172033;
+}
+
+/* Sidebar */
+[data-testid="stSidebar"] {
+    background: #111827 !important;
+    border-right: 1px solid #243044 !important;
+}
+
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] span,
+[data-testid="stSidebar"] label,
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3,
+[data-testid="stSidebar"] h4 {
+    color: #F8FAFC !important;
+}
+
+/* Botões da sidebar */
 [data-testid="stSidebar"] .stButton > button {
-    background: transparent; border: 0; border-radius: 10px;
-    padding: .72rem .8rem; justify-content: flex-start; font-weight: 500;
+    background: #172033 !important;
+    color: #FFFFFF !important;
+    border: 1px solid #2B3850 !important;
+    border-radius: 10px !important;
+    padding: .70rem .85rem !important;
+    font-weight: 650 !important;
+    width: 100% !important;
+    justify-content: flex-start !important;
+    box-shadow: none !important;
 }
-[data-testid="stSidebar"] .stButton > button:hover { background: #1f2937; border: 0; }
-.block-container { padding-top: 2rem; max-width: 1500px; }
+
+[data-testid="stSidebar"] .stButton > button *,
+[data-testid="stSidebar"] button p,
+[data-testid="stSidebar"] button span {
+    color: #FFFFFF !important;
+}
+
+[data-testid="stSidebar"] .stButton > button:hover {
+    background: #26344D !important;
+    color: #FFFFFF !important;
+    border-color: #3B4D6D !important;
+}
+
+/* Botões da área principal */
+[data-testid="stMainBlockContainer"] .stButton > button,
+[data-testid="stMainBlockContainer"] button[kind="secondary"],
+[data-testid="stMainBlockContainer"] button[kind="primary"] {
+    background: #2457E6 !important;
+    color: #FFFFFF !important;
+    border: 1px solid #2457E6 !important;
+    border-radius: 10px !important;
+    font-weight: 700 !important;
+    min-height: 2.7rem !important;
+    box-shadow: 0 1px 2px rgba(16,24,40,.10) !important;
+}
+
+[data-testid="stMainBlockContainer"] .stButton > button *,
+[data-testid="stMainBlockContainer"] button p,
+[data-testid="stMainBlockContainer"] button span {
+    color: #FFFFFF !important;
+}
+
+[data-testid="stMainBlockContainer"] .stButton > button:hover {
+    background: #1846C7 !important;
+    border-color: #1846C7 !important;
+    color: #FFFFFF !important;
+}
+
+/* Métricas - TMA, TME, SLA, volume etc. */
 div[data-testid="stMetric"] {
-    background: white; border: 1px solid #e5e7eb; border-radius: 14px;
-    padding: 1rem; box-shadow: 0 1px 2px rgba(16,24,40,.04);
+    background: #FFFFFF !important;
+    border: 1px solid #DDE3EC !important;
+    border-radius: 16px !important;
+    padding: 1rem 1.05rem !important;
+    box-shadow: 0 3px 12px rgba(16,24,40,.06) !important;
+    min-height: 112px !important;
 }
+
+div[data-testid="stMetric"] [data-testid="stMetricLabel"],
+div[data-testid="stMetric"] [data-testid="stMetricLabel"] *,
+div[data-testid="stMetric"] label,
+div[data-testid="stMetric"] label * {
+    color: #5A6475 !important;
+    opacity: 1 !important;
+    font-weight: 650 !important;
+}
+
+div[data-testid="stMetric"] [data-testid="stMetricValue"],
+div[data-testid="stMetric"] [data-testid="stMetricValue"] *,
+div[data-testid="stMetric"] [data-testid="stMetricDelta"],
+div[data-testid="stMetric"] [data-testid="stMetricDelta"] * {
+    color: #101828 !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    position: relative !important;
+    z-index: 5 !important;
+    font-weight: 800 !important;
+}
+
+/* Cards das empresas */
 .company-card {
-    background: #fff; border: 1px solid #e5e7eb; border-radius: 16px;
-    padding: 1.1rem; min-height: 112px; box-shadow: 0 1px 2px rgba(16,24,40,.04);
-    margin-bottom: .45rem;
+    background: #FFFFFF !important;
+    border: 1px solid #DDE3EC !important;
+    border-radius: 16px !important;
+    padding: 1.15rem !important;
+    min-height: 118px !important;
+    box-shadow: 0 3px 12px rgba(16,24,40,.05) !important;
+    margin-bottom: .45rem !important;
+    position: relative !important;
+    z-index: 1 !important;
 }
-.company-name { font-size: 1.08rem; font-weight: 700; color: #111827; margin-bottom: .35rem; }
-.company-meta { font-size: .86rem; color: #667085; }
-.page-kicker { color: #3157f5; font-size: .76rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-.page-title { font-size: 2rem; font-weight: 750; color: #111827; line-height: 1.2; margin-top: .25rem; }
-.page-subtitle { color: #667085; margin-top: .4rem; margin-bottom: 1.4rem; }
-.stTabs [data-baseweb="tab-list"] { background: #fff; border: 1px solid #e5e7eb; padding: .35rem; border-radius: 12px; gap: .35rem; }
-.stTabs [data-baseweb="tab"] { border-radius: 8px; padding-left: 1rem; padding-right: 1rem; }
-#MainMenu {visibility:hidden;}
-footer {visibility:hidden;}
+
+.company-name {
+    font-size: 1.08rem !important;
+    font-weight: 800 !important;
+    color: #101828 !important;
+    margin-bottom: .35rem !important;
+}
+
+.company-meta {
+    font-size: .86rem !important;
+    color: #667085 !important;
+}
+
+/* Títulos */
+.page-kicker {
+    color: #2457E6 !important;
+    font-size: .76rem !important;
+    font-weight: 800 !important;
+    letter-spacing: .08em !important;
+    text-transform: uppercase !important;
+}
+
+.page-title {
+    font-size: 2rem !important;
+    font-weight: 800 !important;
+    color: #101828 !important;
+    line-height: 1.2 !important;
+    margin-top: .25rem !important;
+}
+
+.page-subtitle {
+    color: #667085 !important;
+    margin-top: .4rem !important;
+    margin-bottom: 1.4rem !important;
+}
+
+/* Abas */
+.stTabs [data-baseweb="tab-list"] {
+    background: #FFFFFF !important;
+    border: 1px solid #DDE3EC !important;
+    padding: .35rem !important;
+    border-radius: 12px !important;
+    gap: .35rem !important;
+}
+
+.stTabs [data-baseweb="tab"] {
+    background: #F4F7FB !important;
+    border-radius: 8px !important;
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+}
+
+.stTabs [data-baseweb="tab"] *,
+.stTabs [data-baseweb="tab"] p,
+.stTabs [data-baseweb="tab"] span {
+    color: #344054 !important;
+    opacity: 1 !important;
+}
+
+.stTabs [aria-selected="true"] {
+    background: #2457E6 !important;
+}
+
+.stTabs [aria-selected="true"] *,
+.stTabs [aria-selected="true"] p,
+.stTabs [aria-selected="true"] span {
+    color: #FFFFFF !important;
+}
+
+/* Inputs, selectbox, multiselect e date input */
+[data-baseweb="input"] > div,
+[data-baseweb="select"] > div,
+[data-testid="stDateInput"] > div > div,
+[data-testid="stTextInput"] input,
+[data-testid="stNumberInput"] input {
+    background: #FFFFFF !important;
+    color: #101828 !important;
+    border-color: #CBD5E1 !important;
+}
+
+[data-baseweb="input"] input,
+[data-baseweb="select"] span,
+[data-baseweb="select"] div,
+[data-testid="stTextInput"] input,
+[data-testid="stNumberInput"] input {
+    color: #101828 !important;
+    opacity: 1 !important;
+}
+
+/* Dropdowns */
+div[role="listbox"],
+ul[role="listbox"] {
+    background: #FFFFFF !important;
+}
+
+div[role="option"],
+li[role="option"],
+div[role="option"] span,
+li[role="option"] span {
+    color: #101828 !important;
+}
+
+/* File uploader */
+[data-testid="stFileUploader"] {
+    background: #FFFFFF !important;
+    border-radius: 14px !important;
+}
+
+[data-testid="stFileUploader"] section {
+    background: #FFFFFF !important;
+    border: 1px dashed #94A3B8 !important;
+}
+
+[data-testid="stFileUploader"] section *,
+[data-testid="stFileUploader"] button * {
+    opacity: 1 !important;
+}
+
+/* Expander */
+[data-testid="stExpander"] {
+    background: #FFFFFF !important;
+    border: 1px solid #DDE3EC !important;
+    border-radius: 12px !important;
+}
+
+[data-testid="stExpander"] summary *,
+[data-testid="stExpander"] details * {
+    color: #172033 !important;
+}
+
+/* Dataframes e tabelas */
+[data-testid="stDataFrame"],
+[data-testid="stTable"] {
+    background: #FFFFFF !important;
+    color: #101828 !important;
+}
+
+/* Alertas */
+[data-testid="stAlert"] {
+    color: #101828 !important;
+}
+
+[data-testid="stAlert"] * {
+    opacity: 1 !important;
+}
+
+/* Plotly - evita transparência visual da caixa */
+[data-testid="stPlotlyChart"] {
+    background: #FFFFFF !important;
+    border: 1px solid #E4E9F0 !important;
+    border-radius: 14px !important;
+    padding: .35rem !important;
+}
+
+/* Evita conteúdo invisível por opacidade/z-index */
+[data-testid="stMainBlockContainer"] {
+    position: relative !important;
+    z-index: 1 !important;
+}
+
+[data-testid="stMainBlockContainer"] button,
+[data-testid="stMainBlockContainer"] [data-testid="stMetric"],
+[data-testid="stMainBlockContainer"] .company-card {
+    visibility: visible !important;
+    opacity: 1 !important;
+}
+
+/* Esconde apenas elementos nativos que não precisamos */
+#MainMenu { visibility: hidden; }
+footer { visibility: hidden; }
 </style>
 """, unsafe_allow_html=True)
 
