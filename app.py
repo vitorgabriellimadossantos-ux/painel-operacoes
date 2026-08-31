@@ -466,6 +466,140 @@ div[data-testid="stHorizontalBlock"]:has(div[data-testid="stMetric"]) {
     gap: .85rem !important;
 }
 
+
+
+/* =========================================================
+   MENU SUPERIOR - ESTILO PILL MODERNO
+   ========================================================= */
+.stTabs {
+    margin-top: .45rem !important;
+    margin-bottom: 1.15rem !important;
+}
+
+/* Faixa horizontal do menu */
+.stTabs [data-baseweb="tab-list"] {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    gap: .38rem !important;
+
+    background: linear-gradient(180deg, #101E33 0%, #0D192B 100%) !important;
+    border: 1px solid #203754 !important;
+    border-radius: 13px !important;
+
+    padding: .42rem .48rem !important;
+    min-height: 52px !important;
+
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    scrollbar-width: thin !important;
+    scrollbar-color: #294463 transparent !important;
+
+    box-shadow:
+        inset 0 1px 0 rgba(255,255,255,.025),
+        0 8px 22px rgba(0,0,0,.10) !important;
+}
+
+/* Cada opção */
+.stTabs [data-baseweb="tab"] {
+    flex: 0 0 auto !important;
+
+    background: #13243B !important;
+    border: 1px solid #213A59 !important;
+    border-radius: 999px !important;
+
+    padding: .58rem 1rem !important;
+    min-height: 38px !important;
+
+    transition:
+        background .18s ease,
+        border-color .18s ease,
+        transform .18s ease,
+        box-shadow .18s ease !important;
+
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    cursor: pointer !important;
+}
+
+/* Texto normal */
+.stTabs [data-baseweb="tab"] p,
+.stTabs [data-baseweb="tab"] span,
+.stTabs [data-baseweb="tab"] div {
+    color: #AFC0D5 !important;
+    font-weight: 650 !important;
+    font-size: .88rem !important;
+    line-height: 1 !important;
+    white-space: nowrap !important;
+
+    background: transparent !important;
+    opacity: 1 !important;
+    text-decoration: none !important;
+}
+
+/* Hover */
+.stTabs [data-baseweb="tab"]:hover {
+    background: #18304E !important;
+    border-color: #315579 !important;
+    transform: translateY(-1px) !important;
+}
+
+.stTabs [data-baseweb="tab"]:hover p,
+.stTabs [data-baseweb="tab"]:hover span,
+.stTabs [data-baseweb="tab"]:hover div {
+    color: #E8F2FF !important;
+}
+
+/* Selecionada - destaque claro igual referência */
+.stTabs [aria-selected="true"] {
+    background: #DCEBFC !important;
+    border-color: #DCEBFC !important;
+
+    box-shadow:
+        0 3px 10px rgba(28, 93, 160, .20),
+        inset 0 1px 0 rgba(255,255,255,.85) !important;
+
+    transform: none !important;
+}
+
+.stTabs [aria-selected="true"] p,
+.stTabs [aria-selected="true"] span,
+.stTabs [aria-selected="true"] div {
+    color: #16375B !important;
+    font-weight: 800 !important;
+}
+
+/* Remove underline / foco padrão */
+.stTabs [data-baseweb="tab-highlight"],
+.stTabs [data-baseweb="tab-border"] {
+    display: none !important;
+}
+
+.stTabs [data-baseweb="tab"]:focus,
+.stTabs [data-baseweb="tab"]:focus-visible {
+    outline: none !important;
+    box-shadow: none !important;
+}
+
+/* Evita seleção de texto ao clicar */
+.stTabs [data-baseweb="tab"],
+.stTabs [data-baseweb="tab"] * {
+    user-select: none !important;
+    -webkit-user-select: none !important;
+}
+
+/* Scrollbar discreta caso a tela seja menor */
+.stTabs [data-baseweb="tab-list"]::-webkit-scrollbar {
+    height: 5px !important;
+}
+.stTabs [data-baseweb="tab-list"]::-webkit-scrollbar-thumb {
+    background: #294463 !important;
+    border-radius: 999px !important;
+}
+.stTabs [data-baseweb="tab-list"]::-webkit-scrollbar-track {
+    background: transparent !important;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
