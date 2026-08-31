@@ -689,6 +689,33 @@ div[data-testid="stHorizontalBlock"]:has(div[data-testid="stMetric"]) {
     font-size:.80rem;
 }
 
+
+
+.kpi-card {
+    min-height: 142px !important;
+}
+
+.kpi-delta {
+    margin-top: .55rem;
+    padding-top: .50rem;
+    border-top: 1px solid rgba(105, 139, 180, .15);
+    font-size: .76rem;
+    font-weight: 750;
+    line-height: 1.2;
+}
+
+.kpi-delta.up {
+    color: #63C7B2;
+}
+
+.kpi-delta.down {
+    color: #E6B672;
+}
+
+.kpi-delta.neutral {
+    color: #8397B2;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -1205,21 +1232,126 @@ def cabecalho_pagina(kicker, titulo, subtitulo=""):
 
 
 
-def card_kpi(label, valor, subtitulo="", destaque=False):
+def card_kpi(label, valor, subtitulo="", destaque=False, delta_texto=None, delta_direcao=None):
     classe = "kpi-card accent" if destaque else "kpi-card"
     label = html_lib.escape(str(label))
     valor = html_lib.escape(str(valor))
     subtitulo = html_lib.escape(str(subtitulo)) if subtitulo else ""
+
+    delta_html = ""
+    if delta_texto:
+        delta_safe = html_lib.escape(str(delta_texto))
+        classe_delta = "neutral"
+        seta = ""
+        if delta_direcao == "up":
+            classe_delta = "up"
+            seta = "↑"
+        elif delta_direcao == "down":
+            classe_delta = "down"
+            seta = "↓"
+
+        delta_html = f'<div class="kpi-delta {classe_delta}">{seta} {delta_safe}</div>'
+
     st.markdown(
         f"""
         <div class="{classe}">
             <div class="kpi-label">{label}</div>
             <div class="kpi-value">{valor}</div>
             <div class="kpi-sub">{subtitulo}</div>
+            {delta_html}
         </div>
         """,
         unsafe_allow_html=True,
     )
+
+
+
+def calcular_variacao_percentual(atual, anterior):
+    """Retorna texto e direção da variação percentual."""
+    try:
+        if anterior is None or pd.isna(anterior) or float(anterior) == 0:
+            return "Sem comparação", None
+        if atual is None or pd.isna(atual):
+            return "Sem comparação", None
+
+        atual = float(atual)
+        anterior = float(anterior)
+        variacao = ((atual - anterior) / abs(anterior)) * 100
+
+        if abs(variacao) < 0.005:
+            return "0,00% vs. período anterior", None
+
+        direcao = "up" if variacao > 0 else "down"
+        texto = f"{abs(variacao):.2f}% vs. período anterior".replace(".", ",")
+        return texto, direcao
+    except Exception:
+        return "Sem comparação", None
+
+
+def obter_periodo_anterior(df_completo, df_atual):
+    """Seleciona o período imediatamente anterior com a mesma duração."""
+    if df_atual is None or df_atual.empty or "Data_Parse" not in df_atual.columns:
+        return pd.DataFrame()
+
+    datas = df_atual["Data_Parse"].dropna()
+    if datas.empty:
+        return pd.DataFrame()
+
+    inicio = pd.to_datetime(datas.min()).normalize()
+    fim = pd.to_datetime(datas.max()).normalize()
+    dias = (fim - inicio).days + 1
+
+    fim_anterior = inicio - pd.Timedelta(days=1)
+    inicio_anterior = fim_anterior - pd.Timedelta(days=dias - 1)
+
+    base = df_completo.copy()
+    if "Data_Parse" not in base.columns:
+        base = preparar_dataframe_banco(base)
+
+    datas_base = pd.to_datetime(base["Data_Parse"], errors="coerce")
+    mask = (datas_base >= inicio_anterior) & (datas_base <= fim_anterior)
+    return base.loc[mask].copy()
+
+
+def metricas_voz_comparacao(df):
+    """Calcula os KPIs de voz usados nos cards comparativos."""
+    voz = df[
+        df["Canal"].astype(str).str.contains("Voz", case=False, na=False)
+    ].copy()
+
+    if voz.empty:
+        return {
+            "recebidas": 0,
+            "atendidas": 0,
+            "abandonadas": 0,
+            "sla": None,
+            "tma": None,
+            "tme": None,
+            "tme_abandonadas": None,
+        }
+
+    mask_ab = _status_abandonado(voz["Status"])
+    recebidas = len(voz)
+    abandonadas = int(mask_ab.sum())
+    atendidas = recebidas - abandonadas
+    sla = _sla_dataframe(voz)
+    tma = pd.to_numeric(voz["Tempo_Conversa_Seg"], errors="coerce").mean()
+    tme = pd.to_numeric(voz["Tempo_Espera_Seg"], errors="coerce").mean()
+    tme_ab = (
+        pd.to_numeric(voz.loc[mask_ab, "Tempo_Espera_Seg"], errors="coerce").mean()
+        if abandonadas else None
+    )
+
+    return {
+        "recebidas": recebidas,
+        "atendidas": atendidas,
+        "abandonadas": abandonadas,
+        "sla": sla,
+        "tma": tma,
+        "tme": tme,
+        "tme_abandonadas": tme_ab,
+    }
+
 
 
 def titulo_secao(titulo, subtitulo=""):
@@ -1403,6 +1535,15 @@ def renderizar_painel(df, titulo, chave, mostrar_empresas=False):
     if df_filtrado.empty:
         st.warning("Não há dados para os filtros selecionados.")
         return
+
+    # Mesmo recorte de empresa/canal, mas no período imediatamente anterior
+    df_periodo_anterior = obter_periodo_anterior(df, df_filtrado)
+
+    # Se a visão consolidada usa seleção de empresas, mantém as mesmas empresas na comparação
+    if mostrar_empresas and 'empresas_sel' in locals() and empresas_sel and not df_periodo_anterior.empty:
+        df_periodo_anterior = df_periodo_anterior[
+            df_periodo_anterior["Empresa"].astype(str).isin(empresas_sel)
+        ]
 
     abas = st.tabs([
         "Visão Executiva",
@@ -1636,31 +1777,71 @@ def renderizar_painel(df, titulo, chave, mostrar_empresas=False):
                 "Indicadores de recebimento, atendimento, abandono e nível de serviço"
             )
 
+            atual_comp = metricas_voz_comparacao(df_filtrado)
+            anterior_comp = metricas_voz_comparacao(df_periodo_anterior) if not df_periodo_anterior.empty else {}
+
+            d_recebidas = calcular_variacao_percentual(
+                atual_comp["recebidas"], anterior_comp.get("recebidas")
+            )
+            d_atendidas = calcular_variacao_percentual(
+                atual_comp["atendidas"], anterior_comp.get("atendidas")
+            )
+            d_abandonadas = calcular_variacao_percentual(
+                atual_comp["abandonadas"], anterior_comp.get("abandonadas")
+            )
+            d_sla = calcular_variacao_percentual(
+                atual_comp["sla"], anterior_comp.get("sla")
+            )
+            d_tma = calcular_variacao_percentual(
+                atual_comp["tma"], anterior_comp.get("tma")
+            )
+            d_tme = calcular_variacao_percentual(
+                atual_comp["tme"], anterior_comp.get("tme")
+            )
+            d_tme_ab = calcular_variacao_percentual(
+                atual_comp["tme_abandonadas"], anterior_comp.get("tme_abandonadas")
+            )
+
             r1 = st.columns(4)
             with r1[0]:
-                card_kpi("Recebidas", recebidas, "Total de chamadas", True)
+                card_kpi(
+                    "Recebidas", recebidas, "Total de chamadas", True,
+                    delta_texto=d_recebidas[0], delta_direcao=d_recebidas[1]
+                )
             with r1[1]:
-                card_kpi("Atendidas", atendidas, _percentual(atendidas, recebidas))
+                card_kpi(
+                    "Atendidas", atendidas, _percentual(atendidas, recebidas),
+                    delta_texto=d_atendidas[0], delta_direcao=d_atendidas[1]
+                )
             with r1[2]:
-                card_kpi("Abandonadas", abandonadas, _percentual(abandonadas, recebidas))
+                card_kpi(
+                    "Abandonadas", abandonadas, _percentual(abandonadas, recebidas),
+                    delta_texto=d_abandonadas[0], delta_direcao=d_abandonadas[1]
+                )
             with r1[3]:
-                card_kpi("Nível de Serviço", _fmt_sla(sla), "SLA")
+                card_kpi(
+                    "Nível de Serviço", _fmt_sla(sla), "SLA",
+                    delta_texto=d_sla[0], delta_direcao=d_sla[1]
+                )
 
             r2 = st.columns(3)
             with r2[0]:
                 card_kpi(
                     "TMA",
-                    proc.formatar_segundos_para_hora(voz["Tempo_Conversa_Seg"].mean())
+                    proc.formatar_segundos_para_hora(voz["Tempo_Conversa_Seg"].mean()),
+                    delta_texto=d_tma[0], delta_direcao=d_tma[1]
                 )
             with r2[1]:
                 card_kpi(
                     "TME",
-                    proc.formatar_segundos_para_hora(voz["Tempo_Espera_Seg"].mean())
+                    proc.formatar_segundos_para_hora(voz["Tempo_Espera_Seg"].mean()),
+                    delta_texto=d_tme[0], delta_direcao=d_tme[1]
                 )
             with r2[2]:
                 card_kpi(
                     "TME Abandonadas",
-                    proc.formatar_segundos_para_hora(tme_ab) if pd.notna(tme_ab) else "Sem dado"
+                    proc.formatar_segundos_para_hora(tme_ab) if pd.notna(tme_ab) else "Sem dado",
+                    delta_texto=d_tme_ab[0], delta_direcao=d_tme_ab[1]
                 )
 
             titulo_secao(
@@ -1906,17 +2087,110 @@ lista_empresas_banco = carregar_empresas()
 if "pagina" not in st.session_state:
     st.session_state["pagina"] = "visao_geral"
 
-st.sidebar.markdown("## Painel Operacional")
-st.sidebar.caption("Central de acompanhamento")
-st.sidebar.markdown("---")
-st.sidebar.button("Visão Geral", width="stretch", on_click=abrir_pagina, args=("visao_geral",))
-st.sidebar.button("Empresas", width="stretch", on_click=abrir_pagina, args=("empresas",))
-st.sidebar.button("Agentes", width="stretch", on_click=abrir_pagina, args=("agentes",))
-st.sidebar.button("Importar Dados", width="stretch", on_click=abrir_pagina, args=("importar",))
-st.sidebar.button("Histórico", width="stretch", on_click=abrir_pagina, args=("historico",))
-st.sidebar.button("Configurações", width="stretch", on_click=abrir_pagina, args=("configuracoes",))
-st.sidebar.markdown("---")
-st.sidebar.caption(f"Banco conectado • {len(lista_empresas_banco)} empresas" if lista_empresas_banco else "Banco sem empresas")
+# ==========================================================
+# MENU LATERAL COM MODO EXPANDIDO / COMPACTO
+# ==========================================================
+if "menu_compacto" not in st.session_state:
+    st.session_state.menu_compacto = False
+
+def alternar_menu_lateral():
+    st.session_state.menu_compacto = not st.session_state.menu_compacto
+
+compacto = st.session_state.menu_compacto
+
+# Ajusta a largura real da lateral. No modo compacto os ícones continuam visíveis.
+if compacto:
+    st.markdown(
+        """
+        <style>
+        [data-testid="stSidebar"] {
+            min-width: 82px !important;
+            max-width: 82px !important;
+            width: 82px !important;
+        }
+        [data-testid="stSidebar"] > div:first-child {
+            width: 82px !important;
+        }
+        [data-testid="stSidebar"] [data-testid="stSidebarContent"] {
+            padding-left: .55rem !important;
+            padding-right: .55rem !important;
+        }
+        [data-testid="stSidebar"] .stButton > button {
+            min-width: 54px !important;
+            width: 54px !important;
+            height: 48px !important;
+            padding: 0 !important;
+            justify-content: center !important;
+            font-size: 1.28rem !important;
+            border-radius: 12px !important;
+        }
+        [data-testid="stSidebar"] hr {
+            margin: .65rem 0 !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+else:
+    st.markdown(
+        """
+        <style>
+        [data-testid="stSidebar"] {
+            min-width: 260px !important;
+            max-width: 260px !important;
+            width: 260px !important;
+        }
+        [data-testid="stSidebar"] > div:first-child {
+            width: 260px !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+# Botão de recolher/expandir do nosso próprio menu
+rotulo_toggle = "›" if compacto else "‹  Recolher"
+st.sidebar.button(
+    rotulo_toggle,
+    key="btn_toggle_menu",
+    width="stretch",
+    on_click=alternar_menu_lateral,
+    help="Expandir menu" if compacto else "Recolher menu",
+)
+
+if not compacto:
+    st.sidebar.markdown("## Painel Operacional")
+    st.sidebar.caption("Central de acompanhamento")
+    st.sidebar.markdown("---")
+
+# Símbolos permanecem visíveis no modo compacto
+itens_menu = [
+    ("▦", "Visão Geral", "visao_geral", "Visão geral do painel"),
+    ("▤", "Empresas", "empresas", "Empresas"),
+    ("♟", "Agentes", "agentes", "Agentes"),
+    ("⇧", "Importar Dados", "importar", "Importar arquivos"),
+    ("↺", "Histórico", "historico", "Histórico de importações"),
+    ("⚙", "Configurações", "configuracoes", "Configurações"),
+]
+
+for simbolo, nome, pagina_destino, ajuda in itens_menu:
+    texto_botao = simbolo if compacto else f"{simbolo}   {nome}"
+    st.sidebar.button(
+        texto_botao,
+        key=f"menu_{pagina_destino}",
+        width="stretch",
+        on_click=abrir_pagina,
+        args=(pagina_destino,),
+        help=ajuda,
+    )
+
+if not compacto:
+    st.sidebar.markdown("---")
+    st.sidebar.caption(
+        f"Banco conectado • {len(lista_empresas_banco)} empresas"
+        if lista_empresas_banco
+        else "Banco sem empresas"
+    )
 
 pagina = st.session_state.get("pagina", "visao_geral")
 
