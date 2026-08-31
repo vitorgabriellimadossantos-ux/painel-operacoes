@@ -1,6 +1,8 @@
 import streamlit as st
+import html as html_lib
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 from datetime import datetime, time
 from sqlalchemy import text as sql_text
 
@@ -600,6 +602,93 @@ div[data-testid="stHorizontalBlock"]:has(div[data-testid="stMetric"]) {
     background: transparent !important;
 }
 
+
+
+/* =========================================================
+   KPI CARDS / SEÇÕES — NOVA ARQUITETURA POWERBI-LIKE
+   ========================================================= */
+.kpi-grid-title {
+    color: #8EA6C4;
+    font-size: .72rem;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    margin: .25rem 0 .65rem 0;
+}
+
+.kpi-card {
+    background: linear-gradient(145deg, #102039 0%, #0D1B30 100%);
+    border: 1px solid #243A5A;
+    border-radius: 14px;
+    padding: 1rem 1.05rem .95rem 1.05rem;
+    min-height: 116px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.12);
+    overflow: hidden;
+}
+
+.kpi-card .kpi-label {
+    color: #8397B2;
+    font-size: .73rem;
+    font-weight: 800;
+    letter-spacing: .045em;
+    text-transform: uppercase;
+    margin-bottom: .55rem;
+}
+
+.kpi-card .kpi-value {
+    color: #F4F8FE;
+    font-size: clamp(1.55rem, 2.4vw, 2.35rem);
+    line-height: 1.05;
+    font-weight: 820;
+    letter-spacing: -.035em;
+    white-space: nowrap;
+}
+
+.kpi-card .kpi-sub {
+    color: #7790AF;
+    font-size: .76rem;
+    margin-top: .48rem;
+    min-height: 18px;
+}
+
+.kpi-card.accent {
+    border-color: rgba(96,165,250,.35);
+    background: linear-gradient(145deg, #122743 0%, #0E1D32 100%);
+}
+
+.kpi-card.soft {
+    background: linear-gradient(145deg, #112238 0%, #0E1D31 100%);
+}
+
+.section-head {
+    display:flex;
+    align-items:flex-end;
+    justify-content:space-between;
+    gap:1rem;
+    margin:1.35rem 0 .75rem 0;
+}
+
+.section-head .section-title {
+    color:#F3F7FD;
+    font-size:1.03rem;
+    font-weight:800;
+}
+
+.section-head .section-sub {
+    color:#7F94AE;
+    font-size:.78rem;
+    margin-top:.20rem;
+}
+
+.data-note {
+    background:#0F1D32;
+    border:1px solid #243A5A;
+    border-radius:12px;
+    color:#8EA6C4;
+    padding:.75rem .9rem;
+    font-size:.80rem;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -1041,15 +1130,22 @@ def filtrar_dataframe_painel(df, chave):
 
 
 
-def aplicar_tema_grafico(fig, titulo, x_titulo="", y_titulo=""):
-    """Padroniza todos os gráficos no tema azul-marinho do painel."""
+def aplicar_tema_grafico(fig, titulo, subtitulo="", x_titulo="", y_titulo="", altura=360):
+    """Tema visual único para gráficos do painel."""
+    titulo_html = f"<b>{titulo}</b>"
+    if subtitulo:
+        titulo_html += f"<br><span style='font-size:12px;color:#7F94AE'>{subtitulo}</span>"
+
     fig.update_layout(
         title=dict(
-            text=titulo,
-            x=0.02,
+            text=titulo_html,
+            x=0.025,
             xanchor="left",
-            font=dict(size=16, color="#F3F7FD"),
+            y=0.96,
+            yanchor="top",
+            font=dict(size=17, color="#F3F7FD"),
         ),
+        height=altura,
         paper_bgcolor="#0F1D32",
         plot_bgcolor="#0F1D32",
         font=dict(
@@ -1057,38 +1153,46 @@ def aplicar_tema_grafico(fig, titulo, x_titulo="", y_titulo=""):
             color="#B8C7DA",
             size=12,
         ),
-        margin=dict(l=26, r=22, t=60, b=28),
+        margin=dict(l=34, r=24, t=78, b=38),
+        hovermode="x unified",
         hoverlabel=dict(
             bgcolor="#142641",
-            bordercolor="#35577F",
+            bordercolor="#365878",
             font=dict(color="#F3F7FD", size=12),
         ),
         legend=dict(
             title_text="",
             orientation="h",
             yanchor="bottom",
-            y=1.02,
+            y=1.01,
             xanchor="right",
             x=1,
-            font=dict(color="#B8C7DA"),
+            font=dict(color="#AFC0D5", size=11),
         ),
+        transition=dict(duration=250),
     )
+
     fig.update_xaxes(
         title=x_titulo,
         showgrid=False,
         zeroline=False,
-        linecolor="#243A5A",
-        tickfont=dict(color="#8397B2"),
-        title_font=dict(color="#8397B2"),
+        showline=False,
+        tickfont=dict(color="#8397B2", size=11),
+        title_font=dict(color="#8397B2", size=11),
+        fixedrange=False,
     )
+
     fig.update_yaxes(
         title=y_titulo,
-        gridcolor="rgba(96, 125, 158, .16)",
+        gridcolor="rgba(106, 137, 174, .13)",
         zeroline=False,
-        linecolor="#243A5A",
-        tickfont=dict(color="#8397B2"),
-        title_font=dict(color="#8397B2"),
+        showline=False,
+        tickfont=dict(color="#8397B2", size=11),
+        title_font=dict(color="#8397B2", size=11),
+        rangemode="tozero",
+        fixedrange=False,
     )
+
     return fig
 
 
@@ -1100,14 +1204,188 @@ def cabecalho_pagina(kicker, titulo, subtitulo=""):
         st.markdown(f'<div class="page-subtitle">{subtitulo}</div>', unsafe_allow_html=True)
 
 
+
+def card_kpi(label, valor, subtitulo="", destaque=False):
+    classe = "kpi-card accent" if destaque else "kpi-card"
+    label = html_lib.escape(str(label))
+    valor = html_lib.escape(str(valor))
+    subtitulo = html_lib.escape(str(subtitulo)) if subtitulo else ""
+    st.markdown(
+        f"""
+        <div class="{classe}">
+            <div class="kpi-label">{label}</div>
+            <div class="kpi-value">{valor}</div>
+            <div class="kpi-sub">{subtitulo}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def titulo_secao(titulo, subtitulo=""):
+    titulo = html_lib.escape(str(titulo))
+    subtitulo = html_lib.escape(str(subtitulo))
+    st.markdown(
+        f"""
+        <div class="section-head">
+            <div>
+                <div class="section-title">{titulo}</div>
+                <div class="section-sub">{subtitulo}</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _status_abandonado(serie):
+    return serie.astype(str).str.contains("aband", case=False, na=False)
+
+
+def _percentual(parte, total):
+    if not total:
+        return "0,00%"
+    return f"{(parte / total * 100):.2f}%".replace(".", ",")
+
+
+def _sla_dataframe(df):
+    if df is None or df.empty:
+        return None
+    try:
+        return proc.calcular_metricas(df).get("SLA (%)")
+    except Exception:
+        return None
+
+
+def _fmt_sla(valor):
+    if valor is None or pd.isna(valor):
+        return "Sem dado"
+    try:
+        return f"{float(valor):.2f}%".replace(".", ",")
+    except Exception:
+        return str(valor)
+
+
+def _extrair_hora(valor):
+    try:
+        if isinstance(valor, str):
+            return int(valor.split(":")[0])
+        if isinstance(valor, time):
+            return valor.hour
+        if hasattr(valor, "hour"):
+            return int(valor.hour)
+    except Exception:
+        pass
+    return None
+
+
+def _coluna_classificacao(df):
+    candidatos = [
+        "Classificacao", "Classificação", "classificacao", "classificação",
+        "Motivo", "motivo", "Categoria", "categoria"
+    ]
+    for c in candidatos:
+        if c in df.columns:
+            return c
+    return None
+
+
+def _tabela_voz_empresas(df):
+    voz = df[df["Canal"].astype(str).str.contains("Voz", case=False, na=False)].copy()
+    if voz.empty:
+        return pd.DataFrame()
+
+    linhas = []
+    for empresa, grupo in voz.groupby("Empresa", dropna=False):
+        recebidas = len(grupo)
+        mask_ab = _status_abandonado(grupo["Status"])
+        abandonadas = int(mask_ab.sum())
+        atendidas = recebidas - abandonadas
+        sla = _sla_dataframe(grupo)
+        tme_ab = grupo.loc[mask_ab, "Tempo_Espera_Seg"].mean() if abandonadas else None
+
+        linhas.append({
+            "Empresa": str(empresa),
+            "Recebidas": recebidas,
+            "Atendidas": atendidas,
+            "% Atendidas": _percentual(atendidas, recebidas),
+            "Nível de Serviço": _fmt_sla(sla),
+            "Abandonadas": abandonadas,
+            "% Abandonadas": _percentual(abandonadas, recebidas),
+            "TME Abandonadas": proc.formatar_segundos_para_hora(tme_ab) if pd.notna(tme_ab) else "Sem dado",
+            "Sem Classificação": "Sem dado",
+        })
+
+    return pd.DataFrame(linhas).sort_values("Recebidas", ascending=False)
+
+
+def _grafico_horario(df, titulo, subtitulo, nome_valor="Atendimentos", area=False):
+    temp = df.copy()
+    temp["Hora_Inteira"] = temp["Hora"].apply(_extrair_hora)
+    hora = (
+        temp.dropna(subset=["Hora_Inteira"])
+        .groupby("Hora_Inteira")
+        .size()
+        .reindex(range(24), fill_value=0)
+        .rename("Volume")
+        .reset_index()
+    )
+    if hora["Volume"].sum() == 0:
+        return None
+
+    if area:
+        fig = go.Figure(go.Scatter(
+            x=hora["Hora_Inteira"],
+            y=hora["Volume"],
+            mode="lines+markers",
+            line=dict(color="#62A9EE", width=3, shape="spline", smoothing=.65),
+            marker=dict(size=5, color="#94C9FA"),
+            fill="tozeroy",
+            fillcolor="rgba(73, 147, 215, .18)",
+            hovertemplate="<b>%{x}:00</b><br>%{y} " + nome_valor.lower() + "<extra></extra>",
+        ))
+    else:
+        fig = go.Figure(go.Bar(
+            x=hora["Hora_Inteira"],
+            y=hora["Volume"],
+            marker=dict(
+                color=hora["Volume"],
+                colorscale=[[0, "#193653"], [.5, "#326B9B"], [1, "#61A6E5"]],
+                line=dict(width=0),
+            ),
+            hovertemplate="<b>%{x}:00</b><br>%{y} " + nome_valor.lower() + "<extra></extra>",
+        ))
+        try:
+            fig.update_traces(marker_cornerradius=6)
+        except Exception:
+            pass
+
+    fig = aplicar_tema_grafico(
+        fig, titulo, subtitulo,
+        x_titulo="Horário",
+        y_titulo=nome_valor,
+        altura=380,
+    )
+    fig.update_layout(showlegend=False, hovermode="closest")
+    fig.update_xaxes(
+        tickvals=list(range(0,24,3)),
+        ticktext=[f"{h:02d}:00" for h in range(0,24,3)],
+    )
+    return fig
+
 def renderizar_painel(df, titulo, chave, mostrar_empresas=False):
-    cabecalho_pagina("PAINEL OPERACIONAL", titulo, "Indicadores consolidados a partir dos dados salvos no Supabase.")
+    cabecalho_pagina(
+        "PAINEL OPERACIONAL",
+        titulo,
+        "Indicadores consolidados a partir dos dados salvos no Supabase."
+    )
 
     df = preparar_dataframe_banco(df)
     if df.empty:
         st.info("Nenhum dado importado para esta seleção.")
         return
 
+    # Filtro de empresas somente na visão consolidada
     if mostrar_empresas:
         empresas = sorted(df["Empresa"].dropna().astype(str).unique().tolist())
         empresas_sel = st.multiselect(
@@ -1135,151 +1413,469 @@ def renderizar_painel(df, titulo, chave, mostrar_empresas=False):
         "Exportar PDF",
     ])
 
+    # =====================================================
+    # 1. VISÃO EXECUTIVA
+    # =====================================================
     with abas[0]:
-        metricas = proc.calcular_metricas(df_filtrado)
-        total_real = int(df_filtrado.shape[0])
-        por_canal = metricas.get("Por Canal", {})
-        vol_voz = sum(v for k, v in por_canal.items() if "Voz" in str(k))
-        vol_chat = sum(v for k, v in por_canal.items() if "Chat" in str(k))
-        sla = metricas.get("SLA (%)")
+        voz = df_filtrado[
+            df_filtrado["Canal"].astype(str).str.contains("Voz", case=False, na=False)
+        ].copy()
+        chat = df_filtrado[
+            df_filtrado["Canal"].astype(str).str.contains("Chat", case=False, na=False)
+        ].copy()
 
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Volume Total", total_real)
-        c2.metric("% Voz", f"{(vol_voz / total_real * 100):.1f}%" if total_real else "0%")
-        c3.metric("% Chat", f"{(vol_chat / total_real * 100):.1f}%" if total_real else "0%")
+        total = len(df_filtrado)
+        total_voz = len(voz)
+        total_chat = len(chat)
 
-        c4, c5, c6 = st.columns(3)
-        c4.metric("TMA Geral", metricas.get("TMA", "00:00:00"))
-        c5.metric("TME Geral", metricas.get("TME", "00:00:00"))
-        c6.metric("SLA", f"{sla}%" if sla is not None else "Sem dado")
-
-        st.markdown("---")
-        col_g1, col_g2 = st.columns(2)
-        with col_g1:
-            diario = (
-                df_filtrado.dropna(subset=["Data_Parse"])
-                .groupby([df_filtrado["Data_Parse"].dt.date, "Canal"])
-                .size()
-                .reset_index(name="Volume")
+        if mostrar_empresas:
+            # Tela equivalente à "VISÃO GERAL DAS EMPRESAS (SOMENTE VOZ)"
+            titulo_secao(
+                "Visão geral das empresas — Voz",
+                "Recebidas, atendidas, abandono e nível de serviço por empresa"
             )
-            if not diario.empty:
-                fig = px.bar(
-                    diario,
-                    x="Data_Parse",
-                    y="Volume",
-                    color="Canal",
-                    barmode="group",
-                    labels={
-                        "Data_Parse": "Data",
-                        "Volume": "Atendimentos",
-                        "Canal": "Canal",
-                    },
-                    color_discrete_sequence=["#3B82F6", "#60A5FA", "#7CB8FF"],
-                )
-                fig = aplicar_tema_grafico(
-                    fig,
-                    "Volume diário por canal",
-                    x_titulo="Data",
-                    y_titulo="Atendimentos",
-                )
-                fig.update_traces(
-                    hovertemplate="<b>%{x|%d/%m/%Y}</b><br>Atendimentos: %{y}<extra>%{fullData.name}</extra>"
-                )
-                st.plotly_chart(fig, width="stretch")
 
-        with col_g2:
-            def extrair_hora(valor):
-                try:
-                    if isinstance(valor, str):
-                        return int(valor.split(":")[0])
-                    if isinstance(valor, time):
-                        return valor.hour
-                    if hasattr(valor, "hour"):
-                        return valor.hour
-                except Exception:
-                    pass
-                return None
+            recebidas = total_voz
+            mask_ab = _status_abandonado(voz["Status"]) if not voz.empty else pd.Series(dtype=bool)
+            abandonadas = int(mask_ab.sum()) if not voz.empty else 0
+            atendidas = recebidas - abandonadas
+            sla_voz = _sla_dataframe(voz)
 
-            temp = df_filtrado.copy()
-            temp["Hora_Inteira"] = temp["Hora"].apply(extrair_hora)
-            hora = temp.dropna(subset=["Hora_Inteira"]).groupby("Hora_Inteira").size().reset_index(name="Volume")
-            if not hora.empty:
-                fig = px.line(
-                    hora,
-                    x="Hora_Inteira",
-                    y="Volume",
-                    markers=True,
-                    labels={
-                        "Hora_Inteira": "Hora do dia",
-                        "Volume": "Atendimentos",
-                    },
-                )
-                fig.update_traces(
-                    line=dict(color="#4A9AF8", width=3),
-                    marker=dict(color="#77B7FF", size=7),
-                    fill="tozeroy",
-                    fillcolor="rgba(59,130,246,.10)",
-                    hovertemplate="<b>%{x}:00</b><br>Atendimentos: %{y}<extra></extra>",
-                )
-                fig = aplicar_tema_grafico(
-                    fig,
-                    "Distribuição dos atendimentos por hora",
-                    x_titulo="Hora do dia",
-                    y_titulo="Atendimentos",
-                )
-                fig.update_xaxes(dtick=2)
-                st.plotly_chart(fig, width="stretch")
+            cols = st.columns(4)
+            with cols[0]:
+                card_kpi("Recebidas", recebidas, "Atendidas + abandonadas", True)
+            with cols[1]:
+                card_kpi("Atendidas", atendidas, _percentual(atendidas, recebidas))
+            with cols[2]:
+                card_kpi("Abandonadas", abandonadas, _percentual(abandonadas, recebidas))
+            with cols[3]:
+                card_kpi("Nível de Serviço", _fmt_sla(sla_voz), "Indicador SLA")
 
+            tabela_voz = _tabela_voz_empresas(df_filtrado)
+
+            ctab, cgraf = st.columns([1.12, 1.45])
+            with ctab:
+                titulo_secao("Desempenho por empresa", "Consolidado de Voz no período")
+                if tabela_voz.empty:
+                    st.info("Não há registros de Voz no período.")
+                else:
+                    st.dataframe(
+                        tabela_voz,
+                        width="stretch",
+                        height=445,
+                        hide_index=True,
+                    )
+
+            with cgraf:
+                fig_hora = _grafico_horario(
+                    voz,
+                    "Volume de atendimento por horário",
+                    "Distribuição das chamadas recebidas ao longo do dia",
+                    "Chamadas",
+                    area=False,
+                )
+                if fig_hora is not None:
+                    st.plotly_chart(
+                        fig_hora,
+                        width="stretch",
+                        config={
+                            "displaylogo": False,
+                            "scrollZoom": True,
+                            "modeBarButtonsToRemove": ["lasso2d", "select2d"],
+                        },
+                    )
+                else:
+                    st.info("Não há horários válidos para montar o gráfico.")
+
+        else:
+            # Tela individual inspirada no painel R2
+            titulo_secao(
+                "Resumo da operação",
+                "Visão integrada de Chat e Voz para a empresa selecionada"
+            )
+
+            franquia = "Sem dado"
+            excedidos = "Sem dado"
+
+            top = st.columns(3)
+            with top[0]:
+                card_kpi("Franquia de atendimentos", franquia, "Aguardando configuração")
+            with top[1]:
+                card_kpi("Total de atendimentos", total, "Chat + Voz", True)
+            with top[2]:
+                card_kpi("Atendimentos excedidos", excedidos, "Depende da franquia")
+
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            col_chat, col_voz = st.columns(2)
+
+            with col_chat:
+                titulo_secao("Chat", "Indicadores de mensageria")
+                pct_chat = _percentual(total_chat, total)
+                c = st.columns(1)
+                with c[0]:
+                    card_kpi("Atendimentos", total_chat, pct_chat, True)
+
+                tma_chat = chat["Tempo_Conversa_Seg"].mean() if not chat.empty else None
+                tme_chat = chat["Tempo_Espera_Seg"].mean() if not chat.empty else None
+
+                m = st.columns(3)
+                with m[0]:
+                    card_kpi(
+                        "TMA",
+                        proc.formatar_segundos_para_hora(tma_chat) if pd.notna(tma_chat) else "Sem dado"
+                    )
+                with m[1]:
+                    card_kpi(
+                        "TME",
+                        proc.formatar_segundos_para_hora(tme_chat) if pd.notna(tme_chat) else "Sem dado"
+                    )
+                with m[2]:
+                    card_kpi("TMR", "Sem dado", "Campo ainda não salvo")
+
+            with col_voz:
+                titulo_secao("Voz", "Indicadores de telefonia")
+                mask_ab = _status_abandonado(voz["Status"]) if not voz.empty else pd.Series(dtype=bool)
+                abandonadas = int(mask_ab.sum()) if not voz.empty else 0
+                atendidas = total_voz - abandonadas
+                sla_voz = _sla_dataframe(voz)
+                pct_voz = _percentual(total_voz, total)
+
+                cv = st.columns(2)
+                with cv[0]:
+                    card_kpi("Atendimentos", total_voz, pct_voz, True)
+                with cv[1]:
+                    card_kpi("Nível de Serviço", _fmt_sla(sla_voz), "SLA")
+
+                tma_voz = voz["Tempo_Conversa_Seg"].mean() if not voz.empty else None
+                tme_voz = voz["Tempo_Espera_Seg"].mean() if not voz.empty else None
+                tme_ab = voz.loc[mask_ab, "Tempo_Espera_Seg"].mean() if abandonadas else None
+
+                mv = st.columns(4)
+                with mv[0]:
+                    card_kpi(
+                        "TMA",
+                        proc.formatar_segundos_para_hora(tma_voz) if pd.notna(tma_voz) else "Sem dado"
+                    )
+                with mv[1]:
+                    card_kpi(
+                        "TME",
+                        proc.formatar_segundos_para_hora(tme_voz) if pd.notna(tme_voz) else "Sem dado"
+                    )
+                with mv[2]:
+                    card_kpi("Abandonadas", abandonadas, _percentual(abandonadas, total_voz))
+                with mv[3]:
+                    card_kpi(
+                        "TME Abandonadas",
+                        proc.formatar_segundos_para_hora(tme_ab) if pd.notna(tme_ab) else "Sem dado"
+                    )
+
+            titulo_secao(
+                "Volume de atendimento por horário",
+                "Os gráficos abaixo respondem ao comportamento de Chat e Voz ao longo do dia"
+            )
+            g1, g2 = st.columns(2)
+            with g1:
+                fig_chat = _grafico_horario(
+                    chat,
+                    "Chat por horário",
+                    "Conversas iniciadas em cada hora",
+                    "Conversas",
+                    area=True,
+                )
+                if fig_chat is not None:
+                    st.plotly_chart(
+                        fig_chat,
+                        width="stretch",
+                        config={"displaylogo": False, "scrollZoom": True}
+                    )
+                else:
+                    st.info("Sem dados horários de Chat.")
+
+            with g2:
+                voz_atendidas = voz.copy()
+                if not voz_atendidas.empty:
+                    voz_atendidas = voz_atendidas[~_status_abandonado(voz_atendidas["Status"])]
+
+                fig_voz = _grafico_horario(
+                    voz_atendidas,
+                    "Voz atendida por horário",
+                    "Chamadas atendidas em cada hora",
+                    "Chamadas",
+                    area=True,
+                )
+                if fig_voz is not None:
+                    st.plotly_chart(
+                        fig_voz,
+                        width="stretch",
+                        config={"displaylogo": False, "scrollZoom": True}
+                    )
+                else:
+                    st.info("Sem dados horários de Voz.")
+
+    # =====================================================
+    # 2. TELEFONIA E VOZ
+    # =====================================================
     with abas[1]:
-        voz = df_filtrado[df_filtrado["Canal"].astype(str).str.contains("Voz", case=False, na=False)]
+        voz = df_filtrado[
+            df_filtrado["Canal"].astype(str).str.contains("Voz", case=False, na=False)
+        ].copy()
+
         if voz.empty:
             st.info("Nenhum registro de Voz neste período.")
         else:
-            abandonadas = voz[voz["Status"].astype(str).str.contains("abandono|abandonada", case=False, na=False)].shape[0]
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Total Chamadas", voz.shape[0])
-            c2.metric("Atendidas", voz.shape[0] - abandonadas)
-            c3.metric("Abandonadas", abandonadas)
+            mask_ab = _status_abandonado(voz["Status"])
+            recebidas = len(voz)
+            abandonadas = int(mask_ab.sum())
+            atendidas = recebidas - abandonadas
+            sla = _sla_dataframe(voz)
+            tme_ab = voz.loc[mask_ab, "Tempo_Espera_Seg"].mean() if abandonadas else None
 
-            c4, c5 = st.columns(2)
-            c4.metric("TME", proc.formatar_segundos_para_hora(voz["Tempo_Espera_Seg"].mean()))
-            c5.metric("TMA", proc.formatar_segundos_para_hora(voz["Tempo_Conversa_Seg"].mean()))
-            st.dataframe(voz, width="stretch", height=350)
+            titulo_secao(
+                "Telefonia e Voz",
+                "Indicadores de recebimento, atendimento, abandono e nível de serviço"
+            )
 
+            r1 = st.columns(4)
+            with r1[0]:
+                card_kpi("Recebidas", recebidas, "Total de chamadas", True)
+            with r1[1]:
+                card_kpi("Atendidas", atendidas, _percentual(atendidas, recebidas))
+            with r1[2]:
+                card_kpi("Abandonadas", abandonadas, _percentual(abandonadas, recebidas))
+            with r1[3]:
+                card_kpi("Nível de Serviço", _fmt_sla(sla), "SLA")
+
+            r2 = st.columns(3)
+            with r2[0]:
+                card_kpi(
+                    "TMA",
+                    proc.formatar_segundos_para_hora(voz["Tempo_Conversa_Seg"].mean())
+                )
+            with r2[1]:
+                card_kpi(
+                    "TME",
+                    proc.formatar_segundos_para_hora(voz["Tempo_Espera_Seg"].mean())
+                )
+            with r2[2]:
+                card_kpi(
+                    "TME Abandonadas",
+                    proc.formatar_segundos_para_hora(tme_ab) if pd.notna(tme_ab) else "Sem dado"
+                )
+
+            titulo_secao(
+                "Volume de atendimento por horário",
+                "Passe o mouse para ver o volume exato de cada hora"
+            )
+            fig = _grafico_horario(
+                voz,
+                "Chamadas recebidas por horário",
+                "Distribuição das chamadas ao longo das 24 horas",
+                "Chamadas",
+                area=False,
+            )
+            if fig is not None:
+                st.plotly_chart(
+                    fig,
+                    width="stretch",
+                    config={
+                        "displaylogo": False,
+                        "scrollZoom": True,
+                        "modeBarButtonsToRemove": ["lasso2d", "select2d"],
+                    },
+                )
+
+            if mostrar_empresas:
+                tabela = _tabela_voz_empresas(df_filtrado)
+                titulo_secao("Tabela por empresa", "Detalhamento dos indicadores de Voz")
+                st.dataframe(tabela, width="stretch", height=430, hide_index=True)
+
+            with st.expander("Ver registros detalhados de Voz"):
+                st.dataframe(voz, width="stretch", height=380)
+
+    # =====================================================
+    # 3. MENSAGERIA E CHAT
+    # =====================================================
     with abas[2]:
-        chat = df_filtrado[df_filtrado["Canal"].astype(str).str.contains("Chat", case=False, na=False)]
+        chat = df_filtrado[
+            df_filtrado["Canal"].astype(str).str.contains("Chat", case=False, na=False)
+        ].copy()
+
         if chat.empty:
             st.info("Nenhum registro de Chat neste período.")
         else:
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Total Conversas", chat.shape[0])
-            c2.metric("TME", proc.formatar_segundos_para_hora(chat["Tempo_Espera_Seg"].mean()))
-            c3.metric("TMA", proc.formatar_segundos_para_hora(chat["Tempo_Conversa_Seg"].mean()))
-            st.dataframe(chat, width="stretch", height=350)
+            titulo_secao(
+                "Mensageria e Chat",
+                "Volume, tempos de atendimento e comportamento por horário"
+            )
 
+            r = st.columns(4)
+            with r[0]:
+                card_kpi("Atendimentos", len(chat), "Conversas processadas", True)
+            with r[1]:
+                card_kpi(
+                    "TMA",
+                    proc.formatar_segundos_para_hora(chat["Tempo_Conversa_Seg"].mean())
+                )
+            with r[2]:
+                card_kpi(
+                    "TME",
+                    proc.formatar_segundos_para_hora(chat["Tempo_Espera_Seg"].mean())
+                )
+            with r[3]:
+                card_kpi("TMR", "Sem dado", "Campo ainda não salvo")
+
+            fig = _grafico_horario(
+                chat,
+                "Chat por horário",
+                "Distribuição das conversas ao longo das 24 horas",
+                "Conversas",
+                area=True,
+            )
+            if fig is not None:
+                st.plotly_chart(
+                    fig,
+                    width="stretch",
+                    config={"displaylogo": False, "scrollZoom": True},
+                )
+
+            with st.expander("Ver registros detalhados de Chat"):
+                st.dataframe(chat, width="stretch", height=380)
+
+    # =====================================================
+    # 4. PRODUTIVIDADE
+    # =====================================================
     with abas[3]:
         agentes = df_filtrado[
             df_filtrado["Agente"].notna()
             & (df_filtrado["Agente"].astype(str).str.strip() != "")
             & (df_filtrado["Agente"].astype(str) != "Não Informado")
-        ]
+        ].copy()
+
         if agentes.empty:
             st.info("Não há dados individuais de agentes neste período.")
         else:
-            ranking = agentes.groupby("Agente").agg(
-                Volume=("Data", "count"),
-                TMA_Seg=("Tempo_Conversa_Seg", "mean"),
-                TME_Seg=("Tempo_Espera_Seg", "mean"),
-            ).reset_index()
-            ranking["TMA"] = ranking["TMA_Seg"].apply(proc.formatar_segundos_para_hora)
-            ranking["TME"] = ranking["TME_Seg"].apply(proc.formatar_segundos_para_hora)
-            ranking = ranking.sort_values("Volume", ascending=False)
-            st.dataframe(ranking[["Agente", "Volume", "TMA", "TME"]], width="stretch", hide_index=True)
+            titulo_secao(
+                "Desempenho por agente",
+                "Atendimentos, TMA, TME, nível de serviço e classificação"
+            )
 
+            linhas = []
+            for agente, grupo in agentes.groupby("Agente"):
+                sla_ag = _sla_dataframe(grupo)
+                linhas.append({
+                    "Agente": agente,
+                    "Atendimentos": len(grupo),
+                    "TMA": proc.formatar_segundos_para_hora(grupo["Tempo_Conversa_Seg"].mean()),
+                    "TME": proc.formatar_segundos_para_hora(grupo["Tempo_Espera_Seg"].mean()),
+                    "Nível de Serviço": _fmt_sla(sla_ag),
+                    "% Sem Classificação": "Sem dado",
+                })
+
+            ranking = pd.DataFrame(linhas).sort_values("Atendimentos", ascending=False)
+
+            k = st.columns(4)
+            with k[0]:
+                card_kpi("Total Atendimentos", len(agentes), "Com agente identificado", True)
+            with k[1]:
+                card_kpi("Nível de Serviço", _fmt_sla(_sla_dataframe(agentes)), "Geral")
+            with k[2]:
+                card_kpi("Sem Classificação", "Sem dado", "Campo ainda não salvo")
+            with k[3]:
+                card_kpi("Agentes", ranking["Agente"].nunique(), "Com atividade no período")
+
+            c1, c2 = st.columns([1.15, .85])
+            with c1:
+                titulo_secao("Desempenho por agente — Voz/Chat", "Tabela operacional")
+                st.dataframe(
+                    ranking,
+                    width="stretch",
+                    height=420,
+                    hide_index=True,
+                )
+
+            with c2:
+                top = ranking.head(10).sort_values("Atendimentos", ascending=True)
+                fig_ag = go.Figure(go.Bar(
+                    x=top["Atendimentos"],
+                    y=top["Agente"],
+                    orientation="h",
+                    marker=dict(
+                        color=top["Atendimentos"],
+                        colorscale=[[0, "#234968"], [.55, "#397AA7"], [1, "#67A7E1"]],
+                    ),
+                    hovertemplate="<b>%{y}</b><br>%{x} atendimentos<extra></extra>",
+                ))
+                try:
+                    fig_ag.update_traces(marker_cornerradius=6)
+                except Exception:
+                    pass
+                fig_ag = aplicar_tema_grafico(
+                    fig_ag,
+                    "Ranking de agentes",
+                    "Top 10 por volume de atendimentos",
+                    x_titulo="Atendimentos",
+                    y_titulo="",
+                    altura=420,
+                )
+                fig_ag.update_layout(showlegend=False, hovermode="closest")
+                st.plotly_chart(fig_ag, width="stretch", config={"displaylogo": False})
+
+            coluna_class = _coluna_classificacao(agentes)
+            titulo_secao(
+                "Classificações dos atendimentos",
+                "Motivos/categorias mais recorrentes"
+            )
+
+            if coluna_class:
+                classificacoes = (
+                    agentes[coluna_class]
+                    .dropna()
+                    .astype(str)
+                    .str.strip()
+                )
+                classificacoes = classificacoes[classificacoes != ""]
+                cont = classificacoes.value_counts().head(10).sort_values(ascending=True)
+
+                if not cont.empty:
+                    fig_c = go.Figure(go.Bar(
+                        x=cont.values,
+                        y=cont.index,
+                        orientation="h",
+                        marker=dict(color="#69A9D2"),
+                        text=cont.values,
+                        textposition="outside",
+                        hovertemplate="<b>%{y}</b><br>%{x} classificações<extra></extra>",
+                    ))
+                    fig_c = aplicar_tema_grafico(
+                        fig_c,
+                        "Total de classificações por motivo",
+                        "Top 10 classificações do período",
+                        x_titulo="Quantidade",
+                        y_titulo="",
+                        altura=430,
+                    )
+                    fig_c.update_layout(showlegend=False, hovermode="closest")
+                    st.plotly_chart(fig_c, width="stretch", config={"displaylogo": False})
+            else:
+                st.markdown(
+                    '<div class="data-note">O banco atual ainda não possui o campo de Classificação/Motivo. '
+                    'Quando incluirmos esse campo na integração, este gráfico será preenchido automaticamente.</div>',
+                    unsafe_allow_html=True,
+                )
+
+    # =====================================================
+    # 5. DADOS
+    # =====================================================
     with abas[4]:
-        st.dataframe(df_filtrado, width="stretch", height=500)
+        titulo_secao("Dados detalhados", "Registros que alimentam os indicadores acima")
+        st.dataframe(df_filtrado, width="stretch", height=520)
 
+    # =====================================================
+    # 6. PDF
+    # =====================================================
     with abas[5]:
+        titulo_secao("Exportar relatório", "Gere o relatório consolidado do período filtrado")
         try:
             buffer_pdf = pdf.gerar_pdf_consolidado(df_filtrado, periodo_str)
             st.download_button(
@@ -1291,7 +1887,6 @@ def renderizar_painel(df, titulo, chave, mostrar_empresas=False):
             )
         except Exception as e:
             st.error(f"Erro ao gerar PDF: {e}")
-
 
 def abrir_pagina(nome):
     st.session_state["pagina"] = nome
