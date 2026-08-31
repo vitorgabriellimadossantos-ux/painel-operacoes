@@ -32,25 +32,48 @@ except ImportError as e:
 # ==========================================
 st.markdown("""
 <style>
-/* =========================================================
-   TEMA VISUAL - CONTRASTE FORÇADO
-   ========================================================= */
+:root {
+    --bg: #07111F;
+    --bg-2: #0A1628;
+    --surface: #0F1D32;
+    --surface-2: #142641;
+    --surface-3: #19304F;
+    --border: #243A5A;
+    --border-soft: #1B304C;
+    --text: #F3F7FD;
+    --text-2: #B8C7DA;
+    --text-3: #8397B2;
+    --accent: #3B82F6;
+    --accent-2: #60A5FA;
+    --accent-soft: rgba(59, 130, 246, .14);
+    --success: #55C9A5;
+    --warning: #E5B768;
+}
 
-/* Página principal */
+/* BASE */
 html, body, [data-testid="stAppViewContainer"], .stApp {
-    background: #F4F7FB !important;
-    color: #172033 !important;
+    background:
+        radial-gradient(circle at 85% 0%, rgba(39, 91, 160, .12), transparent 30%),
+        linear-gradient(180deg, #081424 0%, #07111F 100%) !important;
+    color: var(--text) !important;
+}
+
+[data-testid="stHeader"] {
+    background: rgba(7, 17, 31, .90) !important;
 }
 
 .block-container {
-    padding-top: 1.7rem !important;
+    padding-top: 1.65rem !important;
     padding-bottom: 3rem !important;
     max-width: 1500px !important;
 }
 
-/* Texto da área principal */
+[data-testid="stMainBlockContainer"] {
+    position: relative !important;
+    z-index: 1 !important;
+}
+
 [data-testid="stMainBlockContainer"] p,
-[data-testid="stMainBlockContainer"] span,
 [data-testid="stMainBlockContainer"] label,
 [data-testid="stMainBlockContainer"] h1,
 [data-testid="stMainBlockContainer"] h2,
@@ -58,13 +81,13 @@ html, body, [data-testid="stAppViewContainer"], .stApp {
 [data-testid="stMainBlockContainer"] h4,
 [data-testid="stMainBlockContainer"] h5,
 [data-testid="stMainBlockContainer"] h6 {
-    color: #172033;
+    color: var(--text) !important;
 }
 
-/* Sidebar */
+/* SIDEBAR */
 [data-testid="stSidebar"] {
-    background: #111827 !important;
-    border-right: 1px solid #243044 !important;
+    background: #091528 !important;
+    border-right: 1px solid var(--border-soft) !important;
 }
 
 [data-testid="stSidebar"] p,
@@ -74,180 +97,210 @@ html, body, [data-testid="stAppViewContainer"], .stApp {
 [data-testid="stSidebar"] h2,
 [data-testid="stSidebar"] h3,
 [data-testid="stSidebar"] h4 {
-    color: #F8FAFC !important;
+    color: var(--text) !important;
 }
 
-/* Botões da sidebar */
-[data-testid="stSidebar"] .stButton > button {
-    background: #172033 !important;
-    color: #FFFFFF !important;
-    border: 1px solid #2B3850 !important;
+[data-testid="stSidebar"] hr {
+    border-color: var(--border-soft) !important;
+}
+
+/* BOTÕES */
+.stButton > button,
+button[kind="secondary"],
+button[kind="primary"] {
+    background: var(--surface-2) !important;
+    color: var(--text) !important;
+    border: 1px solid var(--border) !important;
     border-radius: 10px !important;
-    padding: .70rem .85rem !important;
+    min-height: 2.65rem !important;
     font-weight: 650 !important;
+    box-shadow: none !important;
+    transition: background .18s ease, border-color .18s ease, transform .18s ease !important;
+}
+
+.stButton > button *,
+button[kind="secondary"] *,
+button[kind="primary"] * {
+    color: var(--text) !important;
+}
+
+.stButton > button:hover,
+button[kind="secondary"]:hover,
+button[kind="primary"]:hover {
+    background: var(--surface-3) !important;
+    border-color: #35577F !important;
+    color: #FFFFFF !important;
+    transform: translateY(-1px);
+}
+
+[data-testid="stSidebar"] .stButton > button {
     width: 100% !important;
     justify-content: flex-start !important;
-    box-shadow: none !important;
-}
-
-[data-testid="stSidebar"] .stButton > button *,
-[data-testid="stSidebar"] button p,
-[data-testid="stSidebar"] button span {
-    color: #FFFFFF !important;
+    background: transparent !important;
+    border-color: transparent !important;
+    padding: .68rem .78rem !important;
 }
 
 [data-testid="stSidebar"] .stButton > button:hover {
-    background: #26344D !important;
-    color: #FFFFFF !important;
-    border-color: #3B4D6D !important;
+    background: var(--surface-2) !important;
+    border-color: var(--border-soft) !important;
 }
 
-/* Botões da área principal */
-[data-testid="stMainBlockContainer"] .stButton > button,
-[data-testid="stMainBlockContainer"] button[kind="secondary"],
-[data-testid="stMainBlockContainer"] button[kind="primary"] {
-    background: #2457E6 !important;
-    color: #FFFFFF !important;
-    border: 1px solid #2457E6 !important;
-    border-radius: 10px !important;
-    font-weight: 700 !important;
-    min-height: 2.7rem !important;
-    box-shadow: 0 1px 2px rgba(16,24,40,.10) !important;
-}
-
-[data-testid="stMainBlockContainer"] .stButton > button *,
-[data-testid="stMainBlockContainer"] button p,
-[data-testid="stMainBlockContainer"] button span {
-    color: #FFFFFF !important;
-}
-
-[data-testid="stMainBlockContainer"] .stButton > button:hover {
-    background: #1846C7 !important;
-    border-color: #1846C7 !important;
-    color: #FFFFFF !important;
-}
-
-/* Métricas - TMA, TME, SLA, volume etc. */
+/* MÉTRICAS */
 div[data-testid="stMetric"] {
-    background: #FFFFFF !important;
-    border: 1px solid #DDE3EC !important;
-    border-radius: 16px !important;
+    background: linear-gradient(145deg, #102039 0%, #0E1C31 100%) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 14px !important;
     padding: 1rem 1.05rem !important;
-    box-shadow: 0 3px 12px rgba(16,24,40,.06) !important;
-    min-height: 112px !important;
+    min-height: 116px !important;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .13) !important;
+    overflow: visible !important;
 }
 
 div[data-testid="stMetric"] [data-testid="stMetricLabel"],
 div[data-testid="stMetric"] [data-testid="stMetricLabel"] *,
 div[data-testid="stMetric"] label,
 div[data-testid="stMetric"] label * {
-    color: #5A6475 !important;
+    color: var(--text-3) !important;
     opacity: 1 !important;
-    font-weight: 650 !important;
+    font-size: .80rem !important;
+    font-weight: 700 !important;
+    letter-spacing: .025em !important;
 }
 
 div[data-testid="stMetric"] [data-testid="stMetricValue"],
-div[data-testid="stMetric"] [data-testid="stMetricValue"] *,
-div[data-testid="stMetric"] [data-testid="stMetricDelta"],
-div[data-testid="stMetric"] [data-testid="stMetricDelta"] * {
-    color: #101828 !important;
+div[data-testid="stMetric"] [data-testid="stMetricValue"] * {
+    color: #F7FAFF !important;
     opacity: 1 !important;
     visibility: visible !important;
     position: relative !important;
-    z-index: 5 !important;
+    z-index: 10 !important;
     font-weight: 800 !important;
+    letter-spacing: -.025em !important;
 }
 
-/* Cards das empresas */
+div[data-testid="stMetric"] [data-testid="stMetricDelta"],
+div[data-testid="stMetric"] [data-testid="stMetricDelta"] * {
+    color: var(--accent-2) !important;
+    opacity: 1 !important;
+}
+
+/* CARDS DE EMPRESA */
 .company-card {
-    background: #FFFFFF !important;
-    border: 1px solid #DDE3EC !important;
-    border-radius: 16px !important;
+    background: linear-gradient(145deg, #102039 0%, #0D1B30 100%) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 14px !important;
     padding: 1.15rem !important;
     min-height: 118px !important;
-    box-shadow: 0 3px 12px rgba(16,24,40,.05) !important;
+    box-shadow: 0 8px 22px rgba(0,0,0,.10) !important;
     margin-bottom: .45rem !important;
-    position: relative !important;
-    z-index: 1 !important;
 }
 
 .company-name {
-    font-size: 1.08rem !important;
-    font-weight: 800 !important;
-    color: #101828 !important;
+    color: var(--text) !important;
+    font-size: 1.07rem !important;
+    font-weight: 750 !important;
     margin-bottom: .35rem !important;
 }
 
 .company-meta {
+    color: var(--text-3) !important;
     font-size: .86rem !important;
-    color: #667085 !important;
 }
 
-/* Títulos */
+/* CABEÇALHO */
 .page-kicker {
-    color: #2457E6 !important;
-    font-size: .76rem !important;
-    font-weight: 800 !important;
-    letter-spacing: .08em !important;
+    color: var(--accent-2) !important;
+    font-size: .72rem !important;
+    font-weight: 750 !important;
+    letter-spacing: .09em !important;
     text-transform: uppercase !important;
 }
 
 .page-title {
+    color: #F6F9FE !important;
     font-size: 2rem !important;
-    font-weight: 800 !important;
-    color: #101828 !important;
-    line-height: 1.2 !important;
-    margin-top: .25rem !important;
+    font-weight: 760 !important;
+    letter-spacing: -.035em !important;
+    line-height: 1.17 !important;
+    margin-top: .30rem !important;
 }
 
 .page-subtitle {
-    color: #667085 !important;
-    margin-top: .4rem !important;
-    margin-bottom: 1.4rem !important;
+    color: var(--text-3) !important;
+    margin-top: .42rem !important;
+    margin-bottom: 1.35rem !important;
 }
 
-/* Abas */
+/* ABAS - estilo pill da referência */
 .stTabs [data-baseweb="tab-list"] {
-    background: #FFFFFF !important;
-    border: 1px solid #DDE3EC !important;
-    padding: .35rem !important;
+    background: var(--surface) !important;
+    border: 1px solid var(--border-soft) !important;
     border-radius: 12px !important;
-    gap: .35rem !important;
+    padding: .34rem !important;
+    gap: .30rem !important;
 }
 
 .stTabs [data-baseweb="tab"] {
-    background: #F4F7FB !important;
-    border-radius: 8px !important;
-    padding-left: 1rem !important;
-    padding-right: 1rem !important;
+    position: relative !important;
+    background: transparent !important;
+    border: 1px solid transparent !important;
+    border-radius: 9px !important;
+    padding: .62rem .92rem !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    transition: all .16s ease !important;
 }
 
-.stTabs [data-baseweb="tab"] *,
 .stTabs [data-baseweb="tab"] p,
-.stTabs [data-baseweb="tab"] span {
-    color: #344054 !important;
+.stTabs [data-baseweb="tab"] span,
+.stTabs [data-baseweb="tab"] div {
+    color: var(--text-3) !important;
+    font-weight: 650 !important;
     opacity: 1 !important;
+    background: transparent !important;
+}
+
+.stTabs [data-baseweb="tab"]:hover {
+    background: var(--surface-2) !important;
+}
+
+.stTabs [data-baseweb="tab"]:hover p,
+.stTabs [data-baseweb="tab"]:hover span,
+.stTabs [data-baseweb="tab"]:hover div {
+    color: var(--text-2) !important;
 }
 
 .stTabs [aria-selected="true"] {
-    background: #2457E6 !important;
+    background: var(--accent-soft) !important;
+    border-color: rgba(96, 165, 250, .28) !important;
 }
 
-.stTabs [aria-selected="true"] *,
 .stTabs [aria-selected="true"] p,
-.stTabs [aria-selected="true"] span {
-    color: #FFFFFF !important;
+.stTabs [aria-selected="true"] span,
+.stTabs [aria-selected="true"] div {
+    color: #A9D0FF !important;
+    font-weight: 750 !important;
 }
 
-/* Inputs, selectbox, multiselect e date input */
+.stTabs [data-baseweb="tab"]:focus,
+.stTabs [data-baseweb="tab"]:focus-visible {
+    outline: none !important;
+    box-shadow: none !important;
+}
+
+/* INPUTS / SELECTS */
 [data-baseweb="input"] > div,
 [data-baseweb="select"] > div,
 [data-testid="stDateInput"] > div > div,
 [data-testid="stTextInput"] input,
 [data-testid="stNumberInput"] input {
-    background: #FFFFFF !important;
-    color: #101828 !important;
-    border-color: #CBD5E1 !important;
+    background: var(--surface) !important;
+    color: var(--text) !important;
+    border-color: var(--border) !important;
+    border-radius: 10px !important;
 }
 
 [data-baseweb="input"] input,
@@ -255,81 +308,119 @@ div[data-testid="stMetric"] [data-testid="stMetricDelta"] * {
 [data-baseweb="select"] div,
 [data-testid="stTextInput"] input,
 [data-testid="stNumberInput"] input {
-    color: #101828 !important;
+    color: var(--text) !important;
     opacity: 1 !important;
+}
+
+[data-testid="stDateInput"] svg,
+[data-baseweb="select"] svg {
+    fill: var(--text-2) !important;
+}
+
+/* Multiselect tags */
+[data-baseweb="tag"] {
+    background: var(--accent-soft) !important;
+    border: 1px solid rgba(96,165,250,.22) !important;
+}
+
+[data-baseweb="tag"] *,
+[data-baseweb="tag"] span {
+    color: #BBD9FF !important;
 }
 
 /* Dropdowns */
 div[role="listbox"],
 ul[role="listbox"] {
-    background: #FFFFFF !important;
+    background: var(--surface) !important;
+    border: 1px solid var(--border) !important;
 }
 
 div[role="option"],
 li[role="option"],
 div[role="option"] span,
 li[role="option"] span {
-    color: #101828 !important;
+    color: var(--text-2) !important;
 }
 
-/* File uploader */
+div[role="option"]:hover,
+li[role="option"]:hover {
+    background: var(--surface-2) !important;
+}
+
+/* UPLOAD */
 [data-testid="stFileUploader"] {
-    background: #FFFFFF !important;
+    background: var(--surface) !important;
     border-radius: 14px !important;
 }
 
 [data-testid="stFileUploader"] section {
-    background: #FFFFFF !important;
-    border: 1px dashed #94A3B8 !important;
+    background: #0C192B !important;
+    border: 1px dashed #36567E !important;
+    border-radius: 12px !important;
 }
 
 [data-testid="stFileUploader"] section *,
 [data-testid="stFileUploader"] button * {
+    color: var(--text-2) !important;
     opacity: 1 !important;
 }
 
-/* Expander */
+/* EXPANDER */
 [data-testid="stExpander"] {
-    background: #FFFFFF !important;
-    border: 1px solid #DDE3EC !important;
+    background: var(--surface) !important;
+    border: 1px solid var(--border) !important;
     border-radius: 12px !important;
 }
 
 [data-testid="stExpander"] summary *,
 [data-testid="stExpander"] details * {
-    color: #172033 !important;
+    color: var(--text-2) !important;
 }
 
-/* Dataframes e tabelas */
+/* TABELAS */
 [data-testid="stDataFrame"],
 [data-testid="stTable"] {
-    background: #FFFFFF !important;
-    color: #101828 !important;
+    background: var(--surface) !important;
+    border: 1px solid var(--border-soft) !important;
+    border-radius: 12px !important;
+    overflow: hidden !important;
 }
 
-/* Alertas */
+/* ALERTAS */
 [data-testid="stAlert"] {
-    color: #101828 !important;
+    background: var(--surface-2) !important;
+    border: 1px solid var(--border) !important;
+    color: var(--text-2) !important;
+    border-radius: 11px !important;
 }
-
 [data-testid="stAlert"] * {
+    color: var(--text-2) !important;
     opacity: 1 !important;
 }
 
-/* Plotly - evita transparência visual da caixa */
+/* GRÁFICOS */
 [data-testid="stPlotlyChart"] {
-    background: #FFFFFF !important;
-    border: 1px solid #E4E9F0 !important;
+    background: linear-gradient(145deg, #102039 0%, #0D1B30 100%) !important;
+    border: 1px solid var(--border) !important;
     border-radius: 14px !important;
-    padding: .35rem !important;
+    padding: .55rem !important;
+    box-shadow: 0 8px 24px rgba(0,0,0,.10) !important;
 }
 
-/* Evita conteúdo invisível por opacidade/z-index */
-[data-testid="stMainBlockContainer"] {
-    position: relative !important;
-    z-index: 1 !important;
+/* Separadores */
+hr {
+    border: none !important;
+    border-top: 1px solid var(--border-soft) !important;
+    margin: 1.2rem 0 !important;
 }
 
+/* Captions */
+[data-testid="stCaptionContainer"],
+[data-testid="stCaptionContainer"] * {
+    color: var(--text-3) !important;
+}
+
+/* Evita qualquer conteúdo invisível */
 [data-testid="stMainBlockContainer"] button,
 [data-testid="stMainBlockContainer"] [data-testid="stMetric"],
 [data-testid="stMainBlockContainer"] .company-card {
@@ -337,7 +428,6 @@ li[role="option"] span {
     opacity: 1 !important;
 }
 
-/* Esconde apenas elementos nativos que não precisamos */
 #MainMenu { visibility: hidden; }
 footer { visibility: hidden; }
 </style>
@@ -780,6 +870,59 @@ def filtrar_dataframe_painel(df, chave):
     return filtrado, periodo_str
 
 
+
+def aplicar_tema_grafico(fig, titulo, x_titulo="", y_titulo=""):
+    """Padroniza todos os gráficos no tema azul-marinho do painel."""
+    fig.update_layout(
+        title=dict(
+            text=titulo,
+            x=0.02,
+            xanchor="left",
+            font=dict(size=16, color="#F3F7FD"),
+        ),
+        paper_bgcolor="#0F1D32",
+        plot_bgcolor="#0F1D32",
+        font=dict(
+            family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif",
+            color="#B8C7DA",
+            size=12,
+        ),
+        margin=dict(l=26, r=22, t=60, b=28),
+        hoverlabel=dict(
+            bgcolor="#142641",
+            bordercolor="#35577F",
+            font=dict(color="#F3F7FD", size=12),
+        ),
+        legend=dict(
+            title_text="",
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1,
+            font=dict(color="#B8C7DA"),
+        ),
+    )
+    fig.update_xaxes(
+        title=x_titulo,
+        showgrid=False,
+        zeroline=False,
+        linecolor="#243A5A",
+        tickfont=dict(color="#8397B2"),
+        title_font=dict(color="#8397B2"),
+    )
+    fig.update_yaxes(
+        title=y_titulo,
+        gridcolor="rgba(96, 125, 158, .16)",
+        zeroline=False,
+        linecolor="#243A5A",
+        tickfont=dict(color="#8397B2"),
+        title_font=dict(color="#8397B2"),
+    )
+    return fig
+
+
+
 def cabecalho_pagina(kicker, titulo, subtitulo=""):
     st.markdown(f'<div class="page-kicker">{kicker}</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="page-title">{titulo}</div>', unsafe_allow_html=True)
@@ -854,7 +997,21 @@ def renderizar_painel(df, titulo, chave, mostrar_empresas=False):
                     y="Volume",
                     color="Canal",
                     barmode="group",
-                    labels={"Data_Parse": "Data"},
+                    labels={
+                        "Data_Parse": "Data",
+                        "Volume": "Atendimentos",
+                        "Canal": "Canal",
+                    },
+                    color_discrete_sequence=["#3B82F6", "#60A5FA", "#7CB8FF"],
+                )
+                fig = aplicar_tema_grafico(
+                    fig,
+                    "Volume diário por canal",
+                    x_titulo="Data",
+                    y_titulo="Atendimentos",
+                )
+                fig.update_traces(
+                    hovertemplate="<b>%{x|%d/%m/%Y}</b><br>Atendimentos: %{y}<extra>%{fullData.name}</extra>"
                 )
                 st.plotly_chart(fig, width="stretch")
 
@@ -875,7 +1032,30 @@ def renderizar_painel(df, titulo, chave, mostrar_empresas=False):
             temp["Hora_Inteira"] = temp["Hora"].apply(extrair_hora)
             hora = temp.dropna(subset=["Hora_Inteira"]).groupby("Hora_Inteira").size().reset_index(name="Volume")
             if not hora.empty:
-                fig = px.line(hora, x="Hora_Inteira", y="Volume", markers=True)
+                fig = px.line(
+                    hora,
+                    x="Hora_Inteira",
+                    y="Volume",
+                    markers=True,
+                    labels={
+                        "Hora_Inteira": "Hora do dia",
+                        "Volume": "Atendimentos",
+                    },
+                )
+                fig.update_traces(
+                    line=dict(color="#4A9AF8", width=3),
+                    marker=dict(color="#77B7FF", size=7),
+                    fill="tozeroy",
+                    fillcolor="rgba(59,130,246,.10)",
+                    hovertemplate="<b>%{x}:00</b><br>Atendimentos: %{y}<extra></extra>",
+                )
+                fig = aplicar_tema_grafico(
+                    fig,
+                    "Distribuição dos atendimentos por hora",
+                    x_titulo="Hora do dia",
+                    y_titulo="Atendimentos",
+                )
+                fig.update_xaxes(dtick=2)
                 st.plotly_chart(fig, width="stretch")
 
     with abas[1]:
