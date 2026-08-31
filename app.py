@@ -67,7 +67,8 @@ html, body, [data-testid="stAppViewContainer"], .stApp {
 .block-container {
     padding-top: 1.65rem !important;
     padding-bottom: 3rem !important;
-    max-width: 1500px !important;
+    width: 100% !important;
+    max-width: none !important;
 }
 
 [data-testid="stMainBlockContainer"] {
@@ -2103,17 +2104,60 @@ if compacto:
     st.markdown(
         """
         <style>
+        /* Lateral compacta */
         [data-testid="stSidebar"] {
             min-width: 82px !important;
             max-width: 82px !important;
             width: 82px !important;
+            flex: 0 0 82px !important;
         }
         [data-testid="stSidebar"] > div:first-child {
             width: 82px !important;
+            min-width: 82px !important;
+            max-width: 82px !important;
         }
         [data-testid="stSidebar"] [data-testid="stSidebarContent"] {
             padding-left: .55rem !important;
             padding-right: .55rem !important;
+        }
+
+        /* A área principal ocupa imediatamente o espaço liberado */
+        [data-testid="stAppViewContainer"] {
+            width: 100vw !important;
+            max-width: 100vw !important;
+        }
+
+        section[data-testid="stMain"],
+        [data-testid="stMain"] {
+            width: calc(100vw - 82px) !important;
+            max-width: calc(100vw - 82px) !important;
+            min-width: 0 !important;
+            flex: 1 1 auto !important;
+            margin-left: 0 !important;
+        }
+
+        section[data-testid="stMain"] .block-container,
+        [data-testid="stMain"] .block-container,
+        [data-testid="stMainBlockContainer"] {
+            width: 100% !important;
+            max-width: none !important;
+            min-width: 0 !important;
+            padding-left: 1.35rem !important;
+            padding-right: 1.35rem !important;
+            margin-left: 0 !important;
+            margin-right: 0 !important;
+        }
+
+        /* Colunas, tabelas e gráficos podem crescer com a página */
+        [data-testid="stHorizontalBlock"] {
+            width: 100% !important;
+            max-width: 100% !important;
+        }
+
+        [data-testid="stPlotlyChart"],
+        [data-testid="stDataFrame"] {
+            width: 100% !important;
+            max-width: 100% !important;
         }
         [data-testid="stSidebar"] .stButton > button {
             min-width: 54px !important;
@@ -2135,13 +2179,55 @@ else:
     st.markdown(
         """
         <style>
+        /* Lateral expandida */
         [data-testid="stSidebar"] {
             min-width: 260px !important;
             max-width: 260px !important;
             width: 260px !important;
+            flex: 0 0 260px !important;
         }
         [data-testid="stSidebar"] > div:first-child {
             width: 260px !important;
+            min-width: 260px !important;
+            max-width: 260px !important;
+        }
+
+        /* A área principal acompanha a largura da lateral */
+        [data-testid="stAppViewContainer"] {
+            width: 100vw !important;
+            max-width: 100vw !important;
+        }
+
+        section[data-testid="stMain"],
+        [data-testid="stMain"] {
+            width: calc(100vw - 260px) !important;
+            max-width: calc(100vw - 260px) !important;
+            min-width: 0 !important;
+            flex: 1 1 auto !important;
+            margin-left: 0 !important;
+        }
+
+        section[data-testid="stMain"] .block-container,
+        [data-testid="stMain"] .block-container,
+        [data-testid="stMainBlockContainer"] {
+            width: 100% !important;
+            max-width: none !important;
+            min-width: 0 !important;
+            padding-left: 1.35rem !important;
+            padding-right: 1.35rem !important;
+            margin-left: 0 !important;
+            margin-right: 0 !important;
+        }
+
+        [data-testid="stHorizontalBlock"] {
+            width: 100% !important;
+            max-width: 100% !important;
+        }
+
+        [data-testid="stPlotlyChart"],
+        [data-testid="stDataFrame"] {
+            width: 100% !important;
+            max-width: 100% !important;
         }
         </style>
         """,
