@@ -285,6 +285,63 @@ def processar_chat_weblink(df_bruto, nome_empresa=None):
     df['Tempo_Conversa_Seg'] = df['Tempo_Conversa_Seg'].apply(converter_para_segundos)
     return padronizar_dataframe(df)
 
+
+def processar_indicadores_weblink(df_bruto, nome_empresa=None):
+    """
+    Gera indicadores diários de Chat para WEB LINK.
+
+    TMR = coluna 'Tempo médio de resposta'.
+    TMPR (Tempo médio de primeira resposta) é mantido separado e NÃO é
+    usado como TMR.
+    """
+    df = _limpar_colunas(df_bruto)
+
+    if 'Data do Atendimento' not in df.columns:
+        return pd.DataFrame()
+
+    df['Data'] = pd.to_datetime(df['Data do Atendimento'], errors='coerce').dt.normalize()
+    df['Empresa'] = nome_empresa or _empresa_por_dados_ou_nome(df, 'WEB LINK')
+
+    # Converte somente os indicadores realmente existentes no arquivo.
+    if 'TMA' in df.columns:
+        df['TMA_Seg'] = df['TMA'].apply(converter_para_segundos)
+    else:
+        df['TMA_Seg'] = np.nan
+
+    if 'TME' in df.columns:
+        df['TME_Seg'] = df['TME'].apply(converter_para_segundos)
+    else:
+        df['TME_Seg'] = np.nan
+
+    if 'Tempo médio de resposta' in df.columns:
+        df['TMR_Seg'] = df['Tempo médio de resposta'].apply(converter_para_segundos)
+    else:
+        df['TMR_Seg'] = np.nan
+
+    # Mantemos TMPR separado para uso futuro, sem confundir com TMR.
+    if 'Tempo médio de primeira resposta' in df.columns:
+        df['TMPR_Seg'] = df['Tempo médio de primeira resposta'].apply(converter_para_segundos)
+    else:
+        df['TMPR_Seg'] = np.nan
+
+    # Uma linha por data. Como a planilha contém registros de atendimento,
+    # o número de linhas do dia é o volume diário.
+    agrupado = (
+        df.dropna(subset=['Data'])
+          .groupby(['Data', 'Empresa'], dropna=False)
+          .agg(
+              ATENDIMENTOS=('Data', 'size'),
+              TMA_Seg=('TMA_Seg', 'mean'),
+              TME_Seg=('TME_Seg', 'mean'),
+              TMR_Seg=('TMR_Seg', 'mean'),
+              TMPR_Seg=('TMPR_Seg', 'mean'),
+          )
+          .reset_index()
+    )
+
+    agrupado['Canal'] = 'Chat'
+    return agrupado
+
 def processar_chat_volume(df_volume, nome_empresa=None, df_indicadores=None):
     df = _limpar_colunas(df_volume)
     df = df.rename(columns={'Horário Crítico': 'Horario_Critico'})
