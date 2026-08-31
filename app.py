@@ -430,6 +430,42 @@ hr {
 
 #MainMenu { visibility: hidden; }
 footer { visibility: hidden; }
+
+/* CORREÇÃO DE LEGIBILIDADE DOS KPIs */
+div[data-testid="stMetric"] {
+    min-width: 0 !important;
+    margin-bottom: .75rem !important;
+}
+
+div[data-testid="stMetric"] [data-testid="stMetricValue"],
+div[data-testid="stMetric"] [data-testid="stMetricValue"] > div,
+div[data-testid="stMetric"] [data-testid="stMetricValue"] p {
+    font-size: clamp(1.55rem, 2.25vw, 2.35rem) !important;
+    line-height: 1.15 !important;
+    white-space: nowrap !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    max-width: none !important;
+    width: auto !important;
+    color: #F7FAFF !important;
+}
+
+div[data-testid="stMetric"] [data-testid="stMetricLabel"] {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+}
+
+/* Evita reticências nos valores internos do Streamlit */
+div[data-testid="stMetric"] * {
+    text-overflow: clip !important;
+}
+
+/* Espaçamento visual entre as duas linhas de KPIs */
+div[data-testid="stHorizontalBlock"]:has(div[data-testid="stMetric"]) {
+    gap: .85rem !important;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -973,10 +1009,12 @@ def renderizar_painel(df, titulo, chave, mostrar_empresas=False):
         vol_chat = sum(v for k, v in por_canal.items() if "Chat" in str(k))
         sla = metricas.get("SLA (%)")
 
-        c1, c2, c3, c4, c5, c6 = st.columns(6)
+        c1, c2, c3 = st.columns(3)
         c1.metric("Volume Total", total_real)
         c2.metric("% Voz", f"{(vol_voz / total_real * 100):.1f}%" if total_real else "0%")
         c3.metric("% Chat", f"{(vol_chat / total_real * 100):.1f}%" if total_real else "0%")
+
+        c4, c5, c6 = st.columns(3)
         c4.metric("TMA Geral", metricas.get("TMA", "00:00:00"))
         c5.metric("TME Geral", metricas.get("TME", "00:00:00"))
         c6.metric("SLA", f"{sla}%" if sla is not None else "Sem dado")
@@ -1064,10 +1102,12 @@ def renderizar_painel(df, titulo, chave, mostrar_empresas=False):
             st.info("Nenhum registro de Voz neste período.")
         else:
             abandonadas = voz[voz["Status"].astype(str).str.contains("abandono|abandonada", case=False, na=False)].shape[0]
-            c1, c2, c3, c4, c5 = st.columns(5)
+            c1, c2, c3 = st.columns(3)
             c1.metric("Total Chamadas", voz.shape[0])
             c2.metric("Atendidas", voz.shape[0] - abandonadas)
             c3.metric("Abandonadas", abandonadas)
+
+            c4, c5 = st.columns(2)
             c4.metric("TME", proc.formatar_segundos_para_hora(voz["Tempo_Espera_Seg"].mean()))
             c5.metric("TMA", proc.formatar_segundos_para_hora(voz["Tempo_Conversa_Seg"].mean()))
             st.dataframe(voz, width="stretch", height=350)
