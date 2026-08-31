@@ -969,7 +969,7 @@ def processar_arquivos_upload(arquivos, lista_empresas):
                     if not vals_canal.empty:
                         canal_final = vals_canal.iloc[0]
 
-                itens_importacao.append({
+                item_importacao = {
                     'nome': nome,
                     'empresa': empresa_final,
                     'tipo': tipo,
@@ -977,7 +977,20 @@ def processar_arquivos_upload(arquivos, lista_empresas):
                     'hash': hash_arquivo,
                     'df': df_processado,
                     'destino': 'atendimentos'
-                })
+                }
+
+                # WEB LINK possui "Tempo médio de resposta", que é o TMR.
+                # Salvamos os indicadores diários na mesma importação para
+                # não duplicar o arquivo nem misturar TMR com primeira resposta.
+                if tipo == 'chat_weblink':
+                    df_ind_extra = proc.processar_indicadores_weblink(
+                        df_bruto,
+                        None if empresa == 'EMPRESA NÃO IDENTIFICADA' else empresa_final
+                    )
+                    if not df_ind_extra.empty:
+                        item_importacao['indicadores_extra'] = df_ind_extra
+
+                itens_importacao.append(item_importacao)
 
         except Exception as e:
             st.sidebar.error(f"Erro ao processar {nome}: {e}")
@@ -1506,7 +1519,85 @@ def _grafico_horario(df, titulo, subtitulo, nome_valor="Atendimentos", area=Fals
     )
     return fig
 
-def renderizar_painel(df, titulo, chave, mostrar_empresas=False):
+
+def calcular_tmr_indicadores(indicadores, df_filtrado=None):
+    """
+    Calcula TMR a partir de indicadores_diarios.
+    Respeita o período atualmente filtrado no painel.
+    Quando existe volume diário, usa média ponderada por Atendimentos.
+    """
+    if indicadores is None or indicadores.empty or "TMR_Seg" not in indicadores.columns:
+        return None
+
+    ind = indicadores.copy()
+    ind["Data"] = pd.to_datetime(ind["Data"], errors="coerce")
+    ind["TMR_Seg"] = pd.to_numeric(ind["TMR_Seg"], errors="coerce")
+
+    if "Canal" in ind.columns:
+        mask_chat = ind["Canal"].astype(str).str.contains("Chat", case=False, na=False)
+        if mask_chat.any():
+            ind = ind[mask_chat]
+
+    # Usa exatamente o período que está aparecendo no dashboard.
+    if df_filtrado is not None and not df_filtrado.empty and "Data_Parse" in df_filtrado.columns:
+        datas = pd.to_datetime(df_filtrado["Data_Parse"], errors="coerce").dropna()
+        if not datas.empty:
+            inicio = datas.min().normalize()
+            fim = datas.max().normalize()
+            ind = ind[(ind["Data"] >= inicio) & (ind["Data"] <= fim)]
+
+    ind = ind.dropna(subset=["TMR_Seg"])
+    if ind.empty:
+        return None
+
+    if "Atendimentos" in ind.columns:
+        pesos = pd.to_numeric(ind["Atendimentos"], errors="coerce").fillna(0)
+        validos = pesos > 0
+        if validos.any() and pesos[validos].sum() > 0:
+            return float(
+                (ind.loc[validos, "TMR_Seg"] * pesos[validos]).sum()
+                / pesos[validos].sum()
+            )
+
+    return float(ind["TMR_Seg"].mean())
+
+
+def buscar_importacao_id_por_hash(hash_arquivo):
+    """Localiza uma importação já existente pelo hash do arquivo."""
+    if not hash_arquivo:
+        return None
+
+    conn = db.obter_conexao()
+    with conn.session as session:
+        row = session.execute(
+            sql_text(
+                "SELECT id FROM importacoes WHERE hash_arquivo = :hash LIMIT 1"
+            ),
+            {"hash": hash_arquivo},
+        ).mappings().first()
+
+    return row["id"] if row else None
+
+
+def indicadores_da_importacao_existem(importacao_id):
+    """Evita duplicar indicadores ao reenviar o mesmo arquivo WEB LINK."""
+    if not importacao_id:
+        return False
+
+    conn = db.obter_conexao()
+    with conn.session as session:
+        qtd = session.execute(
+            sql_text(
+                "SELECT COUNT(*) FROM indicadores_diarios WHERE importacao_id = :id"
+            ),
+            {"id": importacao_id},
+        ).scalar()
+
+    return bool(qtd and qtd > 0)
+
+
+
+def renderizar_painel(df, titulo, chave, mostrar_empresas=False, indicadores=None):
     cabecalho_pagina(
         "PAINEL OPERACIONAL",
         titulo,
@@ -1673,7 +1764,16 @@ def renderizar_painel(df, titulo, chave, mostrar_empresas=False):
                         proc.formatar_segundos_para_hora(tme_chat) if pd.notna(tme_chat) else "Sem dado"
                     )
                 with m[2]:
-                    card_kpi("TMR", "Sem dado", "Campo ainda não salvo")
+                    tmr_chat = calcular_tmr_indicadores(indicadores, df_filtrado)
+                    card_kpi(
+                        "TMR",
+                        proc.formatar_segundos_para_hora(tmr_chat)
+                        if pd.notna(tmr_chat) and tmr_chat is not None
+                        else "Sem dado",
+                        "Tempo médio de resposta"
+                        if tmr_chat is not None
+                        else "Fonte não fornece TMR no período"
+                    )
 
             with col_voz:
                 titulo_secao("Voz", "Indicadores de telefonia")
@@ -1905,7 +2005,16 @@ def renderizar_painel(df, titulo, chave, mostrar_empresas=False):
                     proc.formatar_segundos_para_hora(chat["Tempo_Espera_Seg"].mean())
                 )
             with r[3]:
-                card_kpi("TMR", "Sem dado", "Campo ainda não salvo")
+                tmr_chat = calcular_tmr_indicadores(indicadores, df_filtrado)
+                card_kpi(
+                    "TMR",
+                    proc.formatar_segundos_para_hora(tmr_chat)
+                    if pd.notna(tmr_chat) and tmr_chat is not None
+                    else "Sem dado",
+                    "Tempo médio de resposta"
+                    if tmr_chat is not None
+                    else "Fonte não fornece TMR no período"
+                )
 
             fig = _grafico_horario(
                 chat,
@@ -2354,12 +2463,14 @@ elif pagina == "empresa":
         try:
             with st.spinner(f"Carregando dados de {empresa_nome}..."):
                 df_empresa = db.consultar_atendimentos(empresa_id=empresa_id)
+                indicadores = consultar_indicadores_empresa(empresa_id)
 
             renderizar_painel(
                 df_empresa,
                 f"{empresa_nome}",
                 f"empresa_{empresa_id}",
                 mostrar_empresas=False,
+                indicadores=indicadores,
             )
 
             st.markdown("---")
@@ -2381,12 +2492,16 @@ elif pagina == "empresa":
                     view["Primeira Resposta"] = view["Primeira_Resposta_Seg"].apply(proc.formatar_segundos_para_hora)
                     st.dataframe(view, width="stretch", hide_index=True)
 
-            indicadores = consultar_indicadores_empresa(empresa_id)
             if not indicadores.empty:
                 with st.expander("Indicadores diários salvos"):
                     view = indicadores.copy()
                     view["TMA"] = view["TMA_Seg"].apply(proc.formatar_segundos_para_hora)
                     view["TME"] = view["TME_Seg"].apply(proc.formatar_segundos_para_hora)
+                    if "TMR_Seg" in view.columns:
+                        view["TMR"] = view["TMR_Seg"].apply(
+                            lambda x: proc.formatar_segundos_para_hora(x)
+                            if pd.notna(x) else "Sem dado"
+                        )
                     st.dataframe(view, width="stretch", hide_index=True)
 
         except Exception as e:
@@ -2459,6 +2574,24 @@ elif pagina == "importar":
                             raise ValueError(f"Empresa '{empresa_nome}' não cadastrada.")
 
                         if db.importacao_ja_existe(item.get("hash")):
+                            # Caso especial: arquivos WEB LINK antigos podem ter
+                            # atendimentos salvos, mas ainda não possuir TMR.
+                            df_ind_extra = item.get("indicadores_extra")
+                            if isinstance(df_ind_extra, pd.DataFrame) and not df_ind_extra.empty:
+                                importacao_existente_id = buscar_importacao_id_por_hash(
+                                    item.get("hash")
+                                )
+                                if (
+                                    importacao_existente_id
+                                    and not indicadores_da_importacao_existem(importacao_existente_id)
+                                ):
+                                    db.salvar_indicadores_diarios(
+                                        normalizar_indicadores_banco(df_ind_extra),
+                                        empresa_id,
+                                        importacao_existente_id,
+                                        canal="Chat",
+                                    )
+
                             duplicados += 1
                             progresso.progress(posicao / total_itens)
                             continue
@@ -2480,6 +2613,16 @@ elif pagina == "importar":
 
                         if item.get("destino") == "atendimentos":
                             db.salvar_atendimentos(df_item, empresa_id, importacao_id)
+
+                            df_ind_extra = item.get("indicadores_extra")
+                            if isinstance(df_ind_extra, pd.DataFrame) and not df_ind_extra.empty:
+                                db.salvar_indicadores_diarios(
+                                    normalizar_indicadores_banco(df_ind_extra),
+                                    empresa_id,
+                                    importacao_id,
+                                    canal="Chat",
+                                )
+
                         elif item.get("destino") == "indicadores":
                             db.salvar_indicadores_diarios(
                                 normalizar_indicadores_banco(df_item),
