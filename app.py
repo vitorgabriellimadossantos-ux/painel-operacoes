@@ -26,6 +26,42 @@ except ImportError as e:
     )
     st.stop()
 
+
+# ==========================================
+# VISUAL MODERNO
+# ==========================================
+st.markdown("""
+<style>
+.stApp { background: #f6f8fc; }
+[data-testid="stSidebar"] { background: #111827; border-right: 1px solid #1f2937; }
+[data-testid="stSidebar"] * { color: #f9fafb; }
+[data-testid="stSidebar"] .stButton > button {
+    background: transparent; border: 0; border-radius: 10px;
+    padding: .72rem .8rem; justify-content: flex-start; font-weight: 500;
+}
+[data-testid="stSidebar"] .stButton > button:hover { background: #1f2937; border: 0; }
+.block-container { padding-top: 2rem; max-width: 1500px; }
+div[data-testid="stMetric"] {
+    background: white; border: 1px solid #e5e7eb; border-radius: 14px;
+    padding: 1rem; box-shadow: 0 1px 2px rgba(16,24,40,.04);
+}
+.company-card {
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 16px;
+    padding: 1.1rem; min-height: 112px; box-shadow: 0 1px 2px rgba(16,24,40,.04);
+    margin-bottom: .45rem;
+}
+.company-name { font-size: 1.08rem; font-weight: 700; color: #111827; margin-bottom: .35rem; }
+.company-meta { font-size: .86rem; color: #667085; }
+.page-kicker { color: #3157f5; font-size: .76rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.page-title { font-size: 2rem; font-weight: 750; color: #111827; line-height: 1.2; margin-top: .25rem; }
+.page-subtitle { color: #667085; margin-top: .4rem; margin-bottom: 1.4rem; }
+.stTabs [data-baseweb="tab-list"] { background: #fff; border: 1px solid #e5e7eb; padding: .35rem; border-radius: 12px; gap: .35rem; }
+.stTabs [data-baseweb="tab"] { border-radius: 8px; padding-left: 1rem; padding-right: 1rem; }
+#MainMenu {visibility:hidden;}
+footer {visibility:hidden;}
+</style>
+""", unsafe_allow_html=True)
+
 # ==========================================
 # CONEXÃO COM O BANCO SUPABASE / POSTGRESQL
 # ==========================================
@@ -450,37 +486,28 @@ def filtrar_dataframe_painel(df, chave):
     else:
         periodo_str = min_date.strftime("%d/%m/%Y")
 
-    col1, col2 = st.columns(2)
-    with col1:
-        canais = sorted(
-            filtrado["Canal"].dropna().astype(str).unique().tolist()
-        )
-        canais_sel = st.multiselect(
-            "Canal",
-            canais,
-            default=canais,
-            key=f"canal_{chave}",
-        )
-        if canais_sel:
-            filtrado = filtrado[filtrado["Canal"].isin(canais_sel)]
-
-    with col2:
-        agentes = sorted(
-            filtrado["Agente"].dropna().astype(str).unique().tolist()
-        )
-        agentes_sel = st.multiselect(
-            "Agentes",
-            agentes,
-            key=f"agentes_{chave}",
-        )
-        if agentes_sel:
-            filtrado = filtrado[filtrado["Agente"].astype(str).isin(agentes_sel)]
+    canais = sorted(filtrado["Canal"].dropna().astype(str).unique().tolist())
+    canais_sel = st.multiselect(
+        "Canal",
+        canais,
+        default=canais,
+        key=f"canal_{chave}",
+    )
+    if canais_sel:
+        filtrado = filtrado[filtrado["Canal"].isin(canais_sel)]
 
     return filtrado, periodo_str
 
 
+def cabecalho_pagina(kicker, titulo, subtitulo=""):
+    st.markdown(f'<div class="page-kicker">{kicker}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="page-title">{titulo}</div>', unsafe_allow_html=True)
+    if subtitulo:
+        st.markdown(f'<div class="page-subtitle">{subtitulo}</div>', unsafe_allow_html=True)
+
+
 def renderizar_painel(df, titulo, chave, mostrar_empresas=False):
-    st.title(titulo)
+    cabecalho_pagina("PAINEL OPERACIONAL", titulo, "Indicadores consolidados a partir dos dados salvos no Supabase.")
 
     df = preparar_dataframe_banco(df)
     if df.empty:
@@ -642,55 +669,24 @@ def abrir_empresa(empresa_id, empresa_nome):
 
 
 # ==========================================
-# SIDEBAR PERMANENTE
+# SIDEBAR MODERNA — SOMENTE MÓDULOS
 # ==========================================
 lista_empresas_banco = carregar_empresas()
 
 if "pagina" not in st.session_state:
     st.session_state["pagina"] = "visao_geral"
 
-st.sidebar.title("Painel de Controle")
-if lista_empresas_banco:
-    st.sidebar.success(f"Banco conectado: {len(lista_empresas_banco)} empresas")
-else:
-    st.sidebar.error("Nenhuma empresa foi carregada do banco.")
-
-st.sidebar.button(
-    "Visão Geral",
-    width="stretch",
-    on_click=abrir_pagina,
-    args=("visao_geral",),
-)
-
-st.sidebar.markdown("### Empresas")
-for empresa in lista_empresas_banco:
-    st.sidebar.button(
-        empresa["nome"],
-        key=f"empresa_{empresa['id']}",
-        width="stretch",
-        on_click=abrir_empresa,
-        args=(empresa["id"], empresa["nome"]),
-    )
-
+st.sidebar.markdown("## Painel Operacional")
+st.sidebar.caption("Central de acompanhamento")
 st.sidebar.markdown("---")
-st.sidebar.button(
-    "Importar Dados",
-    width="stretch",
-    on_click=abrir_pagina,
-    args=("importar",),
-)
-st.sidebar.button(
-    "Histórico de Importações",
-    width="stretch",
-    on_click=abrir_pagina,
-    args=("historico",),
-)
-st.sidebar.button(
-    "Configurações",
-    width="stretch",
-    on_click=abrir_pagina,
-    args=("configuracoes",),
-)
+st.sidebar.button("Visão Geral", width="stretch", on_click=abrir_pagina, args=("visao_geral",))
+st.sidebar.button("Empresas", width="stretch", on_click=abrir_pagina, args=("empresas",))
+st.sidebar.button("Agentes", width="stretch", on_click=abrir_pagina, args=("agentes",))
+st.sidebar.button("Importar Dados", width="stretch", on_click=abrir_pagina, args=("importar",))
+st.sidebar.button("Histórico", width="stretch", on_click=abrir_pagina, args=("historico",))
+st.sidebar.button("Configurações", width="stretch", on_click=abrir_pagina, args=("configuracoes",))
+st.sidebar.markdown("---")
+st.sidebar.caption(f"Banco conectado • {len(lista_empresas_banco)} empresas" if lista_empresas_banco else "Banco sem empresas")
 
 pagina = st.session_state.get("pagina", "visao_geral")
 
@@ -713,11 +709,54 @@ if pagina == "visao_geral":
 
 
 # ==========================================
+# PÁGINA: EMPRESAS
+# ==========================================
+elif pagina == "empresas":
+    cabecalho_pagina("ESTRUTURA", "Empresas", "Escolha uma empresa para abrir o painel individual da operação.")
+    if not lista_empresas_banco:
+        st.info("Nenhuma empresa cadastrada no banco.")
+    else:
+        busca = st.text_input("Buscar empresa", placeholder="Digite o nome da empresa...")
+        empresas_filtradas = lista_empresas_banco
+        if busca.strip():
+            termo = busca.strip().lower()
+            empresas_filtradas = [e for e in lista_empresas_banco if termo in e["nome"].lower()]
+        st.caption(f"{len(empresas_filtradas)} empresa(s)")
+        for inicio in range(0, len(empresas_filtradas), 3):
+            cols = st.columns(3)
+            for col, empresa in zip(cols, empresas_filtradas[inicio:inicio+3]):
+                with col:
+                    sistemas = []
+                    if empresa.get("voz"):
+                        sistemas.append("Voz")
+                    if empresa.get("chat"):
+                        sistemas.append("Chat")
+                    meta = " • ".join(sistemas) if sistemas else "Operação cadastrada"
+                    st.markdown(
+                        f'<div class="company-card"><div class="company-name">{empresa["nome"]}</div><div class="company-meta">{meta}</div></div>',
+                        unsafe_allow_html=True,
+                    )
+                    st.button("Abrir painel", key=f'card_{empresa["id"]}', width="stretch", on_click=abrir_empresa, args=(empresa["id"], empresa["nome"]))
+
+
+# ==========================================
+# PÁGINA: AGENTES
+# ==========================================
+elif pagina == "agentes":
+    cabecalho_pagina("PESSOAS", "Agentes", "Área preparada para a lista oficial de agentes e seus indicadores individuais.")
+    st.info("A estrutura visual está pronta. Na próxima etapa vamos ligar esta página à base oficial de agentes, sem usar Agente como filtro do painel.")
+
+
+# ==========================================
 # PÁGINA: EMPRESA INDIVIDUAL
 # ==========================================
 elif pagina == "empresa":
     empresa_id = st.session_state.get("empresa_id")
     empresa_nome = st.session_state.get("empresa_nome", "Empresa")
+
+    if st.button("← Voltar para Empresas"):
+        abrir_pagina("empresas")
+        st.rerun()
 
     if not empresa_id:
         st.info("Selecione uma empresa na barra lateral.")
@@ -768,11 +807,7 @@ elif pagina == "empresa":
 # PÁGINA: IMPORTAR DADOS
 # ==========================================
 elif pagina == "importar":
-    st.title("Importar Dados")
-    st.write(
-        "Envie os relatórios aqui. Depois que forem salvos no Supabase, "
-        "você pode remover os arquivos do upload: os dados continuarão nos painéis."
-    )
+    cabecalho_pagina("ENTRADA DE DADOS", "Importar Dados", "Envie relatórios para processar e salvar permanentemente no Supabase.")
 
     arquivos_carregados = st.file_uploader(
         "Carregar Relatórios (Excel ou CSV)",
@@ -899,7 +934,7 @@ elif pagina == "importar":
 # PÁGINA: HISTÓRICO
 # ==========================================
 elif pagina == "historico":
-    st.title("Histórico de Importações")
+    cabecalho_pagina("AUDITORIA", "Histórico de Importações", "Acompanhe os arquivos já processados e gravados no banco.")
     try:
         historico = db.listar_importacoes(limite=500)
         if historico.empty:
@@ -914,7 +949,7 @@ elif pagina == "historico":
 # PÁGINA: CONFIGURAÇÕES
 # ==========================================
 elif pagina == "configuracoes":
-    st.title("Configurações")
+    cabecalho_pagina("ADMINISTRAÇÃO", "Configurações", "Cadastros e parâmetros básicos do painel operacional.")
     st.subheader("Empresas cadastradas")
 
     col_form, col_tabela = st.columns([1, 2])
