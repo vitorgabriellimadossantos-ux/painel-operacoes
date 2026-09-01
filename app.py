@@ -624,7 +624,42 @@ div[data-testid="stHorizontalBlock"]:has(div[data-testid="stMetric"]) {
     padding: 1rem 1.05rem .95rem 1.05rem;
     min-height: 116px;
     box-shadow: 0 8px 24px rgba(0,0,0,.12);
-    overflow: hidden;
+    overflow: visible;
+    position: relative;
+    cursor: help;
+}
+
+/* Explicação pequena ao passar o mouse no card */
+.kpi-card[data-tooltip]::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    top: .58rem;
+    right: .65rem;
+    max-width: 220px;
+    padding: .28rem .48rem;
+    border-radius: 7px;
+    background: rgba(5, 15, 29, .96);
+    border: 1px solid rgba(96, 165, 250, .28);
+    color: #B9CCE4;
+    font-size: .64rem;
+    font-weight: 650;
+    line-height: 1.25;
+    letter-spacing: 0;
+    text-transform: none;
+    white-space: normal;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-3px);
+    transition: opacity .14s ease, transform .14s ease, visibility .14s ease;
+    pointer-events: none;
+    z-index: 50;
+    box-shadow: 0 7px 20px rgba(0,0,0,.22);
+}
+
+.kpi-card[data-tooltip]:hover::after {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
 }
 
 .kpi-card .kpi-label {
@@ -1515,11 +1550,37 @@ def cabecalho_pagina(kicker, titulo, subtitulo=""):
 
 
 
-def card_kpi(label, valor, subtitulo="", destaque=False, delta_texto=None, delta_direcao=None):
+def card_kpi(label, valor, subtitulo="", destaque=False, delta_texto=None, delta_direcao=None, tooltip=None):
+    significados = {
+        "TMA": "Tempo Médio de Atendimento",
+        "TME": "Tempo Médio de Espera",
+        "TMR": "Tempo Médio de Resposta",
+        "TME Abandonadas": "Tempo Médio de Espera das chamadas abandonadas",
+        "Nível de Serviço": "Percentual de atendimentos realizados dentro do tempo definido de SLA",
+        "Recebidas": "Total de chamadas recebidas no período",
+        "Atendidas": "Total de chamadas efetivamente atendidas",
+        "Abandonadas": "Chamadas encerradas pelo cliente antes do atendimento",
+        "Atendimentos": "Total de atendimentos realizados no período",
+        "Total Atendimentos": "Total de atendimentos realizados no período",
+        "Total de atendimentos": "Total de atendimentos realizados no período",
+        "Sem Classificação": "Atendimentos que não possuem classificação registrada",
+        "Agentes": "Quantidade de agentes identificados nos dados",
+        "Franquia de atendimentos": "Quantidade mensal de atendimentos incluída no contrato",
+        "Franquia vigente": "Franquia mensal válida para a competência analisada",
+        "Atendimentos excedidos": "Quantidade de atendimentos que ultrapassou a franquia contratada",
+        "Valor por excedente": "Preço cobrado por cada atendimento acima da franquia",
+        "Valor adicional": "Valor total a pagar pelos atendimentos que excederam a franquia",
+        "Competência vigente": "Mês a partir do qual esta condição comercial passou a valer",
+    }
+
     classe = "kpi-card accent" if destaque else "kpi-card"
-    label = html_lib.escape(str(label))
+    label_original = str(label)
+    texto_tooltip = tooltip or significados.get(label_original, f"Indicador: {label_original}")
+
+    label = html_lib.escape(label_original)
     valor = html_lib.escape(str(valor))
     subtitulo = html_lib.escape(str(subtitulo)) if subtitulo else ""
+    tooltip_safe = html_lib.escape(str(texto_tooltip), quote=True)
 
     delta_html = ""
     if delta_texto:
@@ -1537,7 +1598,7 @@ def card_kpi(label, valor, subtitulo="", destaque=False, delta_texto=None, delta
 
     st.markdown(
         f"""
-        <div class="{classe}">
+        <div class="{classe}" data-tooltip="{tooltip_safe}" title="{tooltip_safe}">
             <div class="kpi-label">{label}</div>
             <div class="kpi-value">{valor}</div>
             <div class="kpi-sub">{subtitulo}</div>
@@ -1546,7 +1607,6 @@ def card_kpi(label, valor, subtitulo="", destaque=False, delta_texto=None, delta
         """,
         unsafe_allow_html=True,
     )
-
 
 
 def calcular_variacao_percentual(atual, anterior):
