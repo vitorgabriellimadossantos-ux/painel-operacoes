@@ -761,26 +761,295 @@ def carregar_empresas():
         return []
 
 
-def cadastrar_empresa_banco(nome, tipo, sistema_voz="", sistema_chat=""):
-    """Cadastra uma nova empresa diretamente no Supabase."""
+def cadastrar_empresa_banco(
+    nome,
+    tipo,
+    sistema_voz="",
+    sistema_chat="",
+    franquia_atendimentos=None,
+    valor_por_excedente=None,
+    competencia=None,
+):
+    """Cadastra empresa e, opcionalmente, sua primeira configuração de franquia."""
+    conn = obter_conexao_banco()
+    nome_limpo = nome.upper().strip()
+
+    with conn.session as session:
+        row = session.execute(
+            sql_text(
+                """
+                INSERT INTO empresas (nome, tipo, sistema_voz, sistema_chat, ativo)
+                VALUES (:nome, :tipo, :sistema_voz, :sistema_chat, TRUE)
+                ON CONFLICT (nome) DO UPDATE SET
+                    tipo = EXCLUDED.tipo,
+                    sistema_voz = COALESCE(EXCLUDED.sistema_voz, empresas.sistema_voz),
+                    sistema_chat = COALESCE(EXCLUDED.sistema_chat, empresas.sistema_chat)
+                RETURNING id;
+                """
+            ),
+            {
+                "nome": nome_limpo,
+                "tipo": tipo,
+                "sistema_voz": sistema_voz.strip() if sistema_voz else None,
+                "sistema_chat": sistema_chat.strip() if sistema_chat else None,
+            }
+        ).mappings().first()
+
+        empresa_id = int(row["id"])
+
+        if (
+            franquia_atendimentos is not None
+            and valor_por_excedente is not None
+            and competencia is not None
+        ):
+            competencia_mes = pd.Timestamp(competencia).date().replace(day=1)
+            session.execute(
+                sql_text(
+                    """
+                    INSERT INTO configuracoes_franquia (
+                        empresa_id,
+                        competencia,
+                        franquia_atendimentos,
+                        valor_por_excedente
+                    )
+                    VALUES (
+                        :empresa_id,
+                        :competencia,
+                        :franquia,
+                        :valor
+                    )
+                    ON CONFLICT (empresa_id, competencia)
+                    DO UPDATE SET
+                        franquia_atendimentos = EXCLUDED.franquia_atendimentos,
+                        valor_por_excedente = EXCLUDED.valor_por_excedente;
+                    """
+                ),
+                {
+                    "empresa_id": empresa_id,
+                    "competencia": competencia_mes,
+                    "franquia": int(franquia_atendimentos),
+                    "valor": float(valor_por_excedente),
+                }
+            )
+
+        session.commit()
+        return empresa_id
+
+
+def salvar_configuracao_franquia(
+    empresa_id,
+    franquia_atendimentos,
+    valor_por_excedente,
+    competencia,
+    observacao=None,
+):
+    """
+    Grava a configuração da competência.
+    Se a mesma empresa/mês já existir, atualiza somente aquela competência.
+    """
+    competencia_mes = pd.Timestamp(competencia).date().replace(day=1)
+
     conn = obter_conexao_banco()
     with conn.session as session:
         session.execute(
             sql_text(
                 """
-                INSERT INTO empresas (nome, tipo, sistema_voz, sistema_chat, ativo)
-                VALUES (:nome, :tipo, :sistema_voz, :sistema_chat, TRUE)
-                ON CONFLICT (nome) DO NOTHING;
+                INSERT INTO configuracoes_franquia (
+                    empresa_id,
+                    competencia,
+                    franquia_atendimentos,
+                    valor_por_excedente,
+                    observacao
+                )
+                VALUES (
+                    :empresa_id,
+                    :competencia,
+                    :franquia,
+                    :valor,
+                    :observacao
+                )
+                ON CONFLICT (empresa_id, competencia)
+                DO UPDATE SET
+                    franquia_atendimentos = EXCLUDED.franquia_atendimentos,
+                    valor_por_excedente = EXCLUDED.valor_por_excedente,
+                    observacao = EXCLUDED.observacao;
                 """
             ),
             {
-                "nome": nome.upper().strip(),
-                "tipo": tipo,
-                "sistema_voz": sistema_voz.strip() if sistema_voz else None,
-                "sistema_chat": sistema_chat.strip() if sistema_chat else None,
+                "empresa_id": int(empresa_id),
+                "competencia": competencia_mes,
+                "franquia": int(franquia_atendimentos),
+                "valor": float(valor_por_excedente),
+                "observacao": observacao.strip() if observacao else None,
             }
         )
         session.commit()
+
+
+def consultar_historico_franquia(empresa_id):
+    """Retorna todas as configurações da empresa, da mais recente para a mais antiga."""
+    conn = obter_conexao_banco()
+    consulta = """
+        SELECT
+            cf.id,
+            cf.empresa_id AS "Empresa_ID",
+            cf.competencia AS "Competencia",
+            cf.franquia_atendimentos AS "Franquia",
+            cf.valor_por_excedente AS "Valor_Excedente",
+            cf.observacao AS "Observacao",
+            cf.criado_em AS "Criado_Em"
+        FROM configuracoes_franquia cf
+        WHERE cf.empresa_id = :empresa_id
+        ORDER BY cf.competencia DESC, cf.id DESC;
+    """
+    with conn.session as session:
+        rows = session.execute(
+            sql_text(consulta),
+            {"empresa_id": int(empresa_id)}
+        ).mappings().all()
+    return pd.DataFrame(rows)
+
+
+def obter_configuracao_franquia_para_mes(empresa_id, mes_referencia):
+    """
+    Usa a configuração mais recente cuja competência seja <= ao mês consultado.
+    Assim uma configuração continua válida até que uma nova seja cadastrada.
+    """
+    mes = pd.Timestamp(mes_referencia).date().replace(day=1)
+    conn = obter_conexao_banco()
+    consulta = """
+        SELECT
+            competencia,
+            franquia_atendimentos,
+            valor_por_excedente,
+            observacao
+        FROM configuracoes_franquia
+        WHERE empresa_id = :empresa_id
+          AND competencia <= :mes
+        ORDER BY competencia DESC, id DESC
+        LIMIT 1;
+    """
+    with conn.session as session:
+        row = session.execute(
+            sql_text(consulta),
+            {"empresa_id": int(empresa_id), "mes": mes}
+        ).mappings().first()
+
+    if not row:
+        return None
+
+    return {
+        "competencia": row["competencia"],
+        "franquia": int(row["franquia_atendimentos"]),
+        "valor_excedente": float(row["valor_por_excedente"]),
+        "observacao": row["observacao"],
+    }
+
+
+def calcular_franquia_periodo(df_filtrado, empresa_id):
+    """
+    Calcula franquia e excedentes mês a mês.
+
+    Importante: o excedente é calculado por competência:
+        max(atendimentos_do_mes - franquia_do_mes, 0)
+
+    Isso evita que uma sobra de franquia de um mês compense excesso de outro.
+    """
+    vazio = {
+        "franquia_total": None,
+        "total_atendimentos": 0,
+        "excedidos_total": None,
+        "valor_adicional": None,
+        "valor_excedente_atual": None,
+        "detalhes": pd.DataFrame(),
+        "configurado": False,
+    }
+
+    if df_filtrado is None or df_filtrado.empty:
+        return vazio
+
+    base = df_filtrado.copy()
+    if "Data_Parse" not in base.columns:
+        base["Data_Parse"] = pd.to_datetime(base["Data"], errors="coerce")
+
+    base = base.dropna(subset=["Data_Parse"])
+    if base.empty:
+        return vazio
+
+    base["Competencia"] = base["Data_Parse"].dt.to_period("M").dt.to_timestamp()
+    volumes = (
+        base.groupby("Competencia")
+        .size()
+        .reset_index(name="Atendimentos")
+        .sort_values("Competencia")
+    )
+
+    detalhes = []
+    algum_configurado = False
+
+    for _, row in volumes.iterrows():
+        mes = pd.Timestamp(row["Competencia"])
+        atendimentos = int(row["Atendimentos"])
+        cfg = obter_configuracao_franquia_para_mes(empresa_id, mes)
+
+        if cfg is None:
+            detalhes.append({
+                "Competência": mes.strftime("%m/%Y"),
+                "Atendimentos": atendimentos,
+                "Franquia": None,
+                "Excedidos": None,
+                "Valor por excedente": None,
+                "Valor adicional": None,
+                "Configuração": "Sem configuração",
+            })
+            continue
+
+        algum_configurado = True
+        franquia = int(cfg["franquia"])
+        valor_unitario = float(cfg["valor_excedente"])
+        excedidos = max(atendimentos - franquia, 0)
+        valor_adicional = excedidos * valor_unitario
+
+        detalhes.append({
+            "Competência": mes.strftime("%m/%Y"),
+            "Atendimentos": atendimentos,
+            "Franquia": franquia,
+            "Excedidos": excedidos,
+            "Valor por excedente": valor_unitario,
+            "Valor adicional": valor_adicional,
+            "Configuração": pd.Timestamp(cfg["competencia"]).strftime("%m/%Y"),
+        })
+
+    det = pd.DataFrame(detalhes)
+
+    if not algum_configurado:
+        vazio["total_atendimentos"] = int(len(base))
+        vazio["detalhes"] = det
+        return vazio
+
+    linhas_cfg = det[det["Franquia"].notna()].copy()
+
+    # Se existir mês sem configuração, não inventamos o total financeiro.
+    tem_mes_sem_config = det["Franquia"].isna().any()
+
+    resultado = {
+        "franquia_total": int(linhas_cfg["Franquia"].sum()) if not tem_mes_sem_config else None,
+        "total_atendimentos": int(len(base)),
+        "excedidos_total": int(linhas_cfg["Excedidos"].sum()) if not tem_mes_sem_config else None,
+        "valor_adicional": float(linhas_cfg["Valor adicional"].sum()) if not tem_mes_sem_config else None,
+        "valor_excedente_atual": float(linhas_cfg.iloc[-1]["Valor por excedente"]) if not linhas_cfg.empty else None,
+        "detalhes": det,
+        "configurado": not tem_mes_sem_config,
+    }
+    return resultado
+
+
+def formatar_moeda_br(valor):
+    if valor is None or pd.isna(valor):
+        return "Sem dado"
+    texto = f"{float(valor):,.2f}"
+    texto = texto.replace(",", "X").replace(".", ",").replace("X", ".")
+    return f"R$ {texto}"
 
 
 def ler_arquivo_upload(uploaded_file):
@@ -1597,7 +1866,7 @@ def indicadores_da_importacao_existem(importacao_id):
 
 
 
-def renderizar_painel(df, titulo, chave, mostrar_empresas=False, indicadores=None):
+def renderizar_painel(df, titulo, chave, mostrar_empresas=False, indicadores=None, empresa_id=None):
     cabecalho_pagina(
         "PAINEL OPERACIONAL",
         titulo,
@@ -1727,16 +1996,78 @@ def renderizar_painel(df, titulo, chave, mostrar_empresas=False, indicadores=Non
                 "Visão integrada de Chat e Voz para a empresa selecionada"
             )
 
-            franquia = "Sem dado"
-            excedidos = "Sem dado"
+            resumo_franquia = (
+                calcular_franquia_periodo(df_filtrado, empresa_id)
+                if empresa_id is not None
+                else {
+                    "franquia_total": None,
+                    "excedidos_total": None,
+                    "valor_adicional": None,
+                    "valor_excedente_atual": None,
+                    "detalhes": pd.DataFrame(),
+                    "configurado": False,
+                }
+            )
 
-            top = st.columns(3)
+            franquia_valor = (
+                f"{resumo_franquia['franquia_total']:,}".replace(",", ".")
+                if resumo_franquia.get("franquia_total") is not None
+                else "Sem dado"
+            )
+            excedidos_valor = (
+                f"{resumo_franquia['excedidos_total']:,}".replace(",", ".")
+                if resumo_franquia.get("excedidos_total") is not None
+                else "Sem dado"
+            )
+            valor_extra = formatar_moeda_br(resumo_franquia.get("valor_adicional"))
+
+            top = st.columns(4)
             with top[0]:
-                card_kpi("Franquia de atendimentos", franquia, "Aguardando configuração")
+                card_kpi(
+                    "Franquia de atendimentos",
+                    franquia_valor,
+                    "Franquia mensal acumulada no período"
+                    if resumo_franquia.get("configurado")
+                    else "Configure em Configurações"
+                )
             with top[1]:
                 card_kpi("Total de atendimentos", total, "Chat + Voz", True)
             with top[2]:
-                card_kpi("Atendimentos excedidos", excedidos, "Depende da franquia")
+                card_kpi(
+                    "Atendimentos excedidos",
+                    excedidos_valor,
+                    "Calculado mês a mês"
+                    if resumo_franquia.get("configurado")
+                    else "Aguardando franquia"
+                )
+            with top[3]:
+                card_kpi(
+                    "Valor adicional",
+                    valor_extra,
+                    (
+                        f"{formatar_moeda_br(resumo_franquia.get('valor_excedente_atual'))} por excedente"
+                        if resumo_franquia.get("valor_excedente_atual") is not None
+                        else "Aguardando valor por excedente"
+                    ),
+                    destaque=(
+                        resumo_franquia.get("valor_adicional") is not None
+                        and resumo_franquia.get("valor_adicional", 0) > 0
+                    )
+                )
+
+            detalhes_franquia = resumo_franquia.get("detalhes", pd.DataFrame())
+            if isinstance(detalhes_franquia, pd.DataFrame) and not detalhes_franquia.empty:
+                with st.expander("Detalhamento da franquia por competência", expanded=False):
+                    view_franquia = detalhes_franquia.copy()
+                    if "Valor por excedente" in view_franquia.columns:
+                        view_franquia["Valor por excedente"] = view_franquia["Valor por excedente"].apply(
+                            lambda x: formatar_moeda_br(x) if pd.notna(x) else "Sem dado"
+                        )
+                    if "Valor adicional" in view_franquia.columns:
+                        view_franquia["Valor adicional"] = view_franquia["Valor adicional"].apply(
+                            lambda x: formatar_moeda_br(x) if pd.notna(x) else "Sem dado"
+                        )
+                    st.dataframe(view_franquia, width="stretch", hide_index=True)
 
             st.markdown("<br>", unsafe_allow_html=True)
 
@@ -2471,6 +2802,7 @@ elif pagina == "empresa":
                 f"empresa_{empresa_id}",
                 mostrar_empresas=False,
                 indicadores=indicadores,
+                empresa_id=empresa_id,
             )
 
             st.markdown("---")
@@ -2682,40 +3014,251 @@ elif pagina == "historico":
 # PÁGINA: CONFIGURAÇÕES
 # ==========================================
 elif pagina == "configuracoes":
-    cabecalho_pagina("ADMINISTRAÇÃO", "Configurações", "Cadastros e parâmetros básicos do painel operacional.")
-    st.subheader("Empresas cadastradas")
+    cabecalho_pagina(
+        "ADMINISTRAÇÃO",
+        "Configurações",
+        "Cadastros, franquias e parâmetros comerciais por empresa."
+    )
 
-    col_form, col_tabela = st.columns([1, 2])
-    with col_form:
-        with st.form("form_nova_empresa", clear_on_submit=True):
-            novo_nome = st.text_input("Nome da Empresa*")
-            novo_tipo = st.selectbox(
-                "Grupo/Tipo*",
-                ["Lista Principal", "Secundária", "Terceirizada"],
+    abas_config = st.tabs([
+        "Empresas",
+        "Franquia e Excedentes",
+    ])
+
+    # ------------------------------------------------------
+    # CADASTRO DE EMPRESA
+    # ------------------------------------------------------
+    with abas_config[0]:
+        st.subheader("Empresas cadastradas")
+
+        col_form, col_tabela = st.columns([1, 2])
+        with col_form:
+            with st.form("form_nova_empresa", clear_on_submit=True):
+                novo_nome = st.text_input("Nome da Empresa*")
+                novo_tipo = st.selectbox(
+                    "Grupo/Tipo*",
+                    ["Lista Principal", "Secundária", "Terceirizada"],
+                )
+                novo_chat = st.text_input("Plataforma de Chat")
+                novo_voz = st.text_input("Sistema de Voz / Telefonia")
+
+                st.markdown("#### Configuração comercial inicial")
+                st.caption(
+                    "Opcional. Se preencher, a franquia já ficará vinculada à empresa."
+                )
+                nova_franquia = st.number_input(
+                    "Franquia mensal de atendimentos",
+                    min_value=0,
+                    step=100,
+                    value=0,
+                )
+                novo_valor_excedente = st.number_input(
+                    "Valor por atendimento excedido (R$)",
+                    min_value=0.0,
+                    step=0.01,
+                    value=0.0,
+                    format="%.2f",
+                )
+                nova_competencia = st.date_input(
+                    "Válido a partir da competência",
+                    value=pd.Timestamp.today().date().replace(day=1),
+                    help="O sistema considera o mês/ano. O dia é normalizado para o primeiro dia do mês.",
+                )
+
+                enviar = st.form_submit_button("Salvar Empresa", type="primary")
+                if enviar:
+                    if not novo_nome.strip():
+                        st.error("O nome da empresa é obrigatório.")
+                    else:
+                        try:
+                            cadastrar_empresa_banco(
+                                novo_nome,
+                                novo_tipo,
+                                novo_voz,
+                                novo_chat,
+                                franquia_atendimentos=nova_franquia,
+                                valor_por_excedente=novo_valor_excedente,
+                                competencia=nova_competencia,
+                            )
+                            st.success("Empresa e configuração comercial salvas com sucesso.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(
+                                "Erro ao cadastrar empresa/configuração. "
+                                "Confirme se a tabela configuracoes_franquia foi criada no Supabase. "
+                                f"Detalhe: {e}"
+                            )
+
+        with col_tabela:
+            empresas_df = pd.DataFrame(lista_empresas_banco)
+            if empresas_df.empty:
+                st.info("Nenhuma empresa cadastrada.")
+            else:
+                cols = [
+                    c for c in ["id", "nome", "tipo", "voz", "chat", "ativo"]
+                    if c in empresas_df.columns
+                ]
+                st.dataframe(
+                    empresas_df[cols],
+                    width="stretch",
+                    hide_index=True,
+                    height=500,
+                )
+
+    # ------------------------------------------------------
+    # FRANQUIA / EXCEDENTES
+    # ------------------------------------------------------
+    with abas_config[1]:
+        titulo_secao(
+            "Franquia e excedentes",
+            "Cadastre novas condições sem apagar o histórico contratual."
+        )
+
+        if not lista_empresas_banco:
+            st.info("Cadastre uma empresa antes de configurar a franquia.")
+        else:
+            mapa_empresas_cfg = {
+                f"{e['nome']}": int(e["id"])
+                for e in lista_empresas_banco
+            }
+
+            empresa_cfg_nome = st.selectbox(
+                "Empresa",
+                list(mapa_empresas_cfg.keys()),
+                key="empresa_config_franquia",
             )
-            novo_chat = st.text_input("Plataforma de Chat")
-            novo_voz = st.text_input("Sistema de Voz / Telefonia")
-            enviar = st.form_submit_button("Salvar Empresa", type="primary")
-            if enviar:
-                if not novo_nome.strip():
-                    st.error("O nome da empresa é obrigatório.")
-                else:
+            empresa_cfg_id = mapa_empresas_cfg[empresa_cfg_nome]
+
+            historico_cfg = consultar_historico_franquia(empresa_cfg_id)
+
+            if not historico_cfg.empty:
+                atual = historico_cfg.iloc[0]
+                c_atual = st.columns(3)
+                with c_atual[0]:
+                    card_kpi(
+                        "Franquia vigente",
+                        f"{int(atual['Franquia']):,}".replace(",", "."),
+                        f"Desde {pd.Timestamp(atual['Competencia']).strftime('%m/%Y')}",
+                        True,
+                    )
+                with c_atual[1]:
+                    card_kpi(
+                        "Valor por excedente",
+                        formatar_moeda_br(atual["Valor_Excedente"]),
+                        "Custo unitário",
+                    )
+                with c_atual[2]:
+                    card_kpi(
+                        "Competência vigente",
+                        pd.Timestamp(atual["Competencia"]).strftime("%m/%Y"),
+                        "Mantida até nova alteração",
+                    )
+            else:
+                st.info(
+                    "Esta empresa ainda não possui franquia configurada. "
+                    "Preencha o formulário abaixo."
+                )
+
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            with st.form("form_config_franquia"):
+                col_a, col_b, col_c = st.columns(3)
+
+                with col_a:
+                    franquia_cfg = st.number_input(
+                        "Franquia mensal de atendimentos*",
+                        min_value=0,
+                        step=100,
+                        value=(
+                            int(historico_cfg.iloc[0]["Franquia"])
+                            if not historico_cfg.empty
+                            else 0
+                        ),
+                    )
+
+                with col_b:
+                    valor_cfg = st.number_input(
+                        "Valor por atendimento excedido (R$)*",
+                        min_value=0.0,
+                        step=0.01,
+                        value=(
+                            float(historico_cfg.iloc[0]["Valor_Excedente"])
+                            if not historico_cfg.empty
+                            else 0.0
+                        ),
+                        format="%.2f",
+                    )
+
+                with col_c:
+                    competencia_cfg = st.date_input(
+                        "Válido a partir da competência*",
+                        value=pd.Timestamp.today().date().replace(day=1),
+                        help=(
+                            "Exemplo: escolhendo agosto/2026, essa condição será usada "
+                            "em agosto e nos meses seguintes até existir uma nova condição."
+                        ),
+                    )
+
+                observacao_cfg = st.text_input(
+                    "Observação",
+                    placeholder="Ex.: reajuste contratual, aditivo, nova faixa de franquia...",
+                )
+
+                salvar_cfg = st.form_submit_button(
+                    "Salvar nova configuração",
+                    type="primary",
+                )
+
+                if salvar_cfg:
                     try:
-                        cadastrar_empresa_banco(
-                            novo_nome,
-                            novo_tipo,
-                            novo_voz,
-                            novo_chat,
+                        salvar_configuracao_franquia(
+                            empresa_cfg_id,
+                            franquia_cfg,
+                            valor_cfg,
+                            competencia_cfg,
+                            observacao_cfg,
                         )
-                        st.success("Empresa cadastrada com sucesso.")
+                        st.success(
+                            "Configuração salva. Os cálculos do painel serão atualizados automaticamente."
+                        )
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Erro ao cadastrar empresa: {e}")
+                        st.error(
+                            "Não foi possível salvar. Confirme se a migração SQL foi executada no Supabase. "
+                            f"Detalhe: {e}"
+                        )
 
-    with col_tabela:
-        empresas_df = pd.DataFrame(lista_empresas_banco)
-        if empresas_df.empty:
-            st.info("Nenhuma empresa cadastrada.")
-        else:
-            cols = [c for c in ["id", "nome", "tipo", "voz", "chat", "ativo"] if c in empresas_df.columns]
-            st.dataframe(empresas_df[cols], width="stretch", hide_index=True, height=500)
+            st.markdown("<br>", unsafe_allow_html=True)
+            titulo_secao(
+                "Histórico de condições",
+                "Alterações anteriores permanecem registradas para cálculos históricos."
+            )
+
+            historico_cfg = consultar_historico_franquia(empresa_cfg_id)
+            if historico_cfg.empty:
+                st.caption("Nenhuma condição cadastrada.")
+            else:
+                view = historico_cfg.copy()
+                view["Competência"] = pd.to_datetime(
+                    view["Competencia"], errors="coerce"
+                ).dt.strftime("%m/%Y")
+                view["Franquia"] = pd.to_numeric(
+                    view["Franquia"], errors="coerce"
+                ).fillna(0).astype(int)
+                view["Valor por excedente"] = view["Valor_Excedente"].apply(
+                    formatar_moeda_br
+                )
+
+                colunas_view = [
+                    "Competência",
+                    "Franquia",
+                    "Valor por excedente",
+                    "Observacao",
+                    "Criado_Em",
+                ]
+                st.dataframe(
+                    view[[c for c in colunas_view if c in view.columns]],
+                    width="stretch",
+                    hide_index=True,
+                    height=360,
+                )
